@@ -1,329 +1,289 @@
-const WIDTH = 920;
-const HEIGHT = 540;
-const WALK_SPEED = 142;
-const PALETTE = {
-  ink: '#29382e', wall: '#285547', wallDark: '#1c4036', wood: '#d2a572',
-  woodLight: '#e1bd8c', woodDark: '#9b714e', cream: '#f2e5c8', green: '#759b64',
-};
-
+const WIDTH = 1280;
+const HEIGHT = 820;
+const WALK_SPEED = 185;
+const SPAWN = { x: 618, y: 453 };
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const STATIONS = [
+  { action: 'work', label: 'DESENVOLVIMENTO', verb: 'Sentar e trabalhar', x: 196, y: 342, labelX: 196, labelY: 190, range: 54, bounds: {x: 114, y: 195, w: 162, h: 121} },
+  { action: 'board', label: 'PROJETOS', verb: 'Consultar os projetos', x: 392, y: 210, labelX: 393, labelY: 69, range: 52, bounds: {x: 309, y: 88, w: 135, h: 89} },
+  { action: 'sales', label: 'COMERCIAL', verb: 'Conversar com clientes', x: 636, y: 342, labelX: 636, labelY: 190, range: 54, bounds: {x: 554, y: 197, w: 170, h: 126} },
+  { action: 'finance', label: 'FINANCEIRO', verb: 'Conferir o caixa', x: 1054, y: 342, labelX: 1054, labelY: 190, range: 54, bounds: {x: 966, y: 195, w: 176, h: 126} },
+  { action: 'team', label: 'PESSOAS & CULTURA', verb: 'Cuidar da equipe', x: 569, y: 607, labelX: 573, labelY: 471, range: 54, bounds: {x: 500, y: 487, w: 150, h: 111} },
+  { action: 'furniture', label: 'ARQUITETURA', verb: 'Planejar o escritório', x: 780, y: 607, labelX: 779, labelY: 471, range: 52, bounds: {x: 710, y: 489, w: 136, h: 108} },
+  { action: 'coffee', label: 'CAFÉ', verb: 'Preparar um café', x: 183, y: 594, labelX: 144, labelY: 445, range: 50, bounds: {x: 100, y: 442, w: 92, h: 139} },
+  { action: 'rest', label: 'LOUNGE', verb: 'Fazer uma pausa', x: 332, y: 706, labelX: 339, labelY: 562, range: 56, bounds: {x: 245, y: 593, w: 192, h: 78} },
+  { action: 'product', label: 'LABORATÓRIO', verb: 'Desenvolver um produto', x: 1052, y: 649, labelX: 1052, labelY: 508, range: 54, bounds: {x: 962, y: 522, w: 184, h: 117} },
+  { action: 'reception', label: 'RECEPÇÃO', verb: 'Abrir o diário do fundador', x: 618, y: 730, labelX: 618, labelY: 628, range: 50, bounds: {x: 550, y: 643, w: 144, h: 66} },
+  { action: 'exit', label: 'SAÍDA', verb: 'Encerrar o expediente', x: 1157, y: 733, labelX: 1157, labelY: 686, range: 47, bounds: {x: 1120, y: 700, w: 82, h: 67} },
+];
 
-/** A self-contained, keyboard and pointer controlled pixel-art office. */
+/** The entire game lives in this office. All interactions require physical travel. */
 export class OfficeScene {
   constructor(canvas, { onInteract = () => {}, onMove = () => {} } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.onInteract = onInteract;
     this.onMove = onMove;
-    this.state = { profile: { name: 'Você', company: 'Nova empresa', avatarColor: '#e59b54' }, employees: [], furniture: [] };
-    this.player = { x: 448, y: 348, facing: 'down', moving: false, step: 0 };
+    this.state = { profile: { name: 'Você', company: 'Seu estúdio', avatarColor: '#e59b54' }, employees: [], furniture: [], energy: 100, reputation: 12, cash: 20000, projects: [], leads: [] };
+    this.player = { ...SPAWN, facing: 'down', moving: false, step: 0 };
+    this.hotspots = STATIONS.map((station) => ({ ...station }));
     this.keys = new Set();
     this.pointer = null;
     this.destination = null;
+    this.path = null;
     this.pendingAction = null;
-    this.hasMoved = false;
+    this.interactionOpen = false;
+    this.positionLoaded = false;
     this.time = 0;
     this.lastTime = 0;
+    this.moveReportElapsed = 0;
+    this.travelAccumulator = 0;
+    this.zoom = 1;
     this.destroyed = false;
-    this.hotspots = [
-      { action: 'work', label: 'COMPUTADOR', x: 242, y: 291, labelX: 242, labelY: 162, range: 72 },
-      { action: 'coffee', label: 'CAFÉ', x: 215, y: 350, labelX: 133, labelY: 274, range: 70 },
-      { action: 'board', label: 'PROJETOS', x: 710, y: 157, labelX: 710, labelY: 31, range: 65 },
-      { action: 'finance', label: 'FINANCEIRO', x: 692, y: 307, labelX: 692, labelY: 185, range: 68 },
-      { action: 'rest', label: 'DESCANSAR', x: 695, y: 450, labelX: 714, labelY: 341, range: 66 },
+    this.baseObstacles = [
+      {x: 115, y: 238, w: 158, h: 75}, {x: 290, y: 230, w: 130, h: 76},
+      {x: 289, y: 362, w: 134, h: 76}, {x: 558, y: 239, w: 164, h: 76},
+      {x: 969, y: 239, w: 170, h: 76}, {x: 103, y: 483, w: 82, h: 91},
+      {x: 245, y: 599, w: 188, h: 65}, {x: 502, y: 520, w: 144, h: 76},
+      {x: 715, y: 521, w: 130, h: 74}, {x: 965, y: 559, w: 175, h: 76},
+      {x: 553, y: 654, w: 141, h: 54},
+      {x: 452, y: 191, w: 10, h: 188}, {x: 858, y: 191, w: 10, h: 188},
+      {x: 452, y: 509, w: 10, h: 207}, {x: 858, y: 510, w: 10, h: 182},
+      {x: 83, y: 199, w: 22, h: 35}, {x: 1177, y: 199, w: 22, h: 35},
     ];
-    this.obstacles = [
-      { x: 169, y: 192, w: 149, h: 78 },
-      { x: 374, y: 182, w: 156, h: 73 },
-      { x: 604, y: 224, w: 173, h: 68 },
-      { x: 90, y: 295, w: 88, h: 102 },
-      { x: 618, y: 364, w: 189, h: 66 },
-      { x: 86, y: 148, w: 54, h: 52 },
-      { x: 797, y: 147, w: 38, h: 59 },
-    ];
-    this.baseObstacles = this.obstacles.map((obstacle) => ({ ...obstacle }));
+    this.obstacles = this.baseObstacles.map((obstacle) => ({...obstacle}));
     this.background = document.createElement('canvas');
     this.background.width = WIDTH;
     this.background.height = HEIGHT;
     this.renderBackground();
     this.handleKeyDown = this.handleKeyDown.bind(this);
-    this.handleKeyUp = this.handleKeyUp.bind(this);
+    this.handleKeyUp = (event) => this.keys.delete(event.key.toLowerCase());
     this.handlePointerMove = this.handlePointerMove.bind(this);
     this.handlePointerDown = this.handlePointerDown.bind(this);
     this.handlePointerLeave = () => { this.pointer = null; };
-    this.handleBlur = () => { this.keys.clear(); this.player.moving = false; };
+    this.handleBlur = () => { this.keys.clear(); this.player.moving = false; this.reportMovement(true); };
     this.frame = this.frame.bind(this);
+    this.handleResize = () => this.resize();
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('keyup', this.handleKeyUp);
     window.addEventListener('blur', this.handleBlur);
+    window.addEventListener('resize', this.handleResize);
     canvas.addEventListener('pointermove', this.handlePointerMove);
     canvas.addEventListener('pointerdown', this.handlePointerDown);
     canvas.addEventListener('pointerleave', this.handlePointerLeave);
     this.resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => this.resize()) : null;
     this.resizeObserver?.observe(canvas);
-    this.handleResize = () => this.resize();
-    window.addEventListener('resize', this.handleResize);
-    canvas.setAttribute('aria-label', 'Escritório jogável. Use WASD ou as setas para andar e E para interagir. Você também pode clicar no chão ou nas estações.');
     canvas.setAttribute('tabindex', '0');
+    canvas.setAttribute('aria-label', 'Escritório da empresa. Caminhe com WASD ou setas. Use E próximo a cada setor ou clique na estação para ir até ela.');
     this.resize();
     this.raf = requestAnimationFrame(this.frame);
   }
 
   setState(state) {
-    this.state = state || this.state;
-    const previousObstacles = this.obstacles;
-    this.obstacles = this.baseObstacles.map((obstacle) => ({ ...obstacle }));
-    if (/mesa|desk/.test(this.ownedFurniture())) this.obstacles.push({ x: 191, y: 377, w: 142, h: 78 });
-    const obstaclesChanged = previousObstacles.length !== this.obstacles.length
-      || this.obstacles.some((obstacle, index) => ['x', 'y', 'w', 'h'].some((key) => obstacle[key] !== previousObstacles[index]?.[key]));
-    const playerBlocked = !this.canStand(this.player.x, this.player.y);
-    if (obstaclesChanged || playerBlocked) {
-      this.destination = null;
-      this.path = null;
-      this.pendingAction = null;
-    }
-    if (playerBlocked) {
-      const position = this.nearestWalkablePosition(this.player);
-      if (position) {
+    if (!state) return;
+    this.state = state;
+    const previous = this.obstacles;
+    this.obstacles = this.baseObstacles.map((obstacle) => ({...obstacle}));
+    if (this.hasFurniture('desk')) this.obstacles.push({x: 115, y: 370, w: 150, h: 76});
+    const changed = previous.length !== this.obstacles.length || this.obstacles.some((o, i) => ['x','y','w','h'].some((key) => o[key] !== previous[i]?.[key]));
+    if (!this.positionLoaded) {
+      this.positionLoaded = true;
+      const position = state.officePosition;
+      if (Number.isFinite(position?.x) && Number.isFinite(position?.y)
+        && position.x >= 85 && position.x <= 1195 && position.y >= 195 && position.y <= 756) {
         this.player.x = position.x;
         this.player.y = position.y;
-        this.player.moving = false;
-        this.keys.clear();
-      } else this.resetPlayer();
+      }
     }
-    this.renderBackground();
+    const blocked = !this.canStand(this.player.x, this.player.y);
+    if (changed || blocked) this.cancelRoute();
+    if (blocked) {
+      const nearest = this.nearestWalkablePosition(this.player);
+      Object.assign(this.player, nearest || SPAWN, {moving: false});
+      this.keys.clear();
+    }
   }
 
+  getStation(action) { const station = this.hotspots.find((spot) => spot.action === action); return station ? {...station} : null; }
+  isNearStation(action) { const spot = this.getStation(action); return !!spot && this.canStand(this.player.x, this.player.y) && distance(this.player, spot) <= spot.range; }
+  getScreenPoint(action) {
+    const spot = this.getStation(action);
+    if (!spot) return null;
+    const x = this.offsetX + spot.x * this.scale, y = this.offsetY + spot.y * this.scale;
+    return {x, y, visible: x >= 0 && x <= this.cssWidth && y >= 0 && y <= this.cssHeight};
+  }
+  requestInteraction(action) {
+    const spot = this.getStation(action);
+    if (!spot || this.blockedInput()) return false;
+    if (this.isNearStation(action)) { this.activate(action); return true; }
+    return this.walkTo(spot, action);
+  }
+  setInteractionOpen(open) {
+    this.interactionOpen = !!open;
+    if (open) { this.cancelRoute(); this.keys.clear(); this.player.moving = false; this.reportMovement(true); }
+  }
+  setZoom(value) { this.zoom = clamp(Number(value) || 1, 1, 1.6); this.resize(); }
   resetPlayer() {
-    this.player.x = 448;
-    this.player.y = 348;
-    this.player.facing = 'down';
-    this.player.moving = false;
-    this.destination = null;
-    this.path = null;
-    this.pendingAction = null;
-    this.keys.clear();
-    this.hasMoved = false;
+    Object.assign(this.player, SPAWN, {facing:'down',moving:false,step:0});
+    this.positionLoaded = true;
+    this.cancelRoute(); this.keys.clear(); this.travelAccumulator = 0; this.moveReportElapsed = 0;
+    this.updateCamera();
+  }
+  cancelRoute() { this.destination = null; this.path = null; this.pendingAction = null; }
+  activate(action) {
+    if (!this.isNearStation(action) || this.blockedInput()) return false;
+    this.cancelRoute(); this.player.moving = false; this.reportMovement(true); this.onInteract(action); return true;
   }
 
   resize() {
     const rect = this.canvas.getBoundingClientRect();
     this.cssWidth = Math.max(1, rect.width);
-    this.cssHeight = Math.max(1, rect.height || 430);
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = Math.round(this.cssWidth * dpr);
-    this.canvas.height = Math.round(this.cssHeight * dpr);
-    this.dpr = dpr;
-    this.scale = Math.min(this.cssWidth / WIDTH, this.cssHeight / HEIGHT);
-    this.offsetX = (this.cssWidth - WIDTH * this.scale) / 2;
-    this.offsetY = (this.cssHeight - HEIGHT * this.scale) / 2;
-    this.draw();
+    this.cssHeight = Math.max(1, rect.height || 720);
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.canvas.width = Math.round(this.cssWidth * this.dpr);
+    this.canvas.height = Math.round(this.cssHeight * this.dpr);
+    const fit = Math.min(this.cssWidth / WIDTH, this.cssHeight / HEIGHT);
+    this.followCamera = fit < 0.58 || this.zoom > 1;
+    this.scale = this.followCamera ? Math.max(fit, this.cssWidth < 600 ? 0.72 : fit) * this.zoom : fit;
+    this.updateCamera(); this.draw();
   }
-
+  updateCamera() {
+    if (!this.scale) return;
+    const scaledW = WIDTH * this.scale, scaledH = HEIGHT * this.scale;
+    this.offsetX = scaledW <= this.cssWidth ? (this.cssWidth-scaledW)/2 : clamp(this.cssWidth/2-this.player.x*this.scale, this.cssWidth-scaledW, 0);
+    this.offsetY = scaledH <= this.cssHeight ? (this.cssHeight-scaledH)/2 : clamp(this.cssHeight*.56-this.player.y*this.scale, this.cssHeight-scaledH, 0);
+  }
   destroy() {
-    this.destroyed = true;
-    cancelAnimationFrame(this.raf);
-    window.removeEventListener('keydown', this.handleKeyDown);
-    window.removeEventListener('keyup', this.handleKeyUp);
-    window.removeEventListener('blur', this.handleBlur);
-    window.removeEventListener('resize', this.handleResize);
-    this.canvas.removeEventListener('pointermove', this.handlePointerMove);
-    this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
-    this.canvas.removeEventListener('pointerleave', this.handlePointerLeave);
-    this.resizeObserver?.disconnect();
+    this.destroyed = true; cancelAnimationFrame(this.raf); this.reportMovement(true);
+    window.removeEventListener('keydown', this.handleKeyDown); window.removeEventListener('keyup', this.handleKeyUp);
+    window.removeEventListener('blur', this.handleBlur); window.removeEventListener('resize', this.handleResize);
+    this.canvas.removeEventListener('pointermove', this.handlePointerMove); this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
+    this.canvas.removeEventListener('pointerleave', this.handlePointerLeave); this.resizeObserver?.disconnect();
   }
-
   blockedInput(event) {
+    if (this.interactionOpen || this.canvas.closest?.('[hidden]')) return true;
     const target = event?.target || document.activeElement;
-    if (this.canvas.closest?.('[hidden]')) return true;
-    if (target?.isContentEditable || target?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) return true;
-    const overlays = document.querySelectorAll('.modal-overlay');
-    return [...overlays].some((overlay) => !overlay.hidden && overlay.getAttribute('aria-hidden') !== 'true' && getComputedStyle(overlay).display !== 'none');
+    if (target?.isContentEditable || target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]')) return true;
+    return [...document.querySelectorAll('.modal-overlay')].some((el) => !el.hidden && el.getAttribute('aria-hidden') !== 'true' && getComputedStyle(el).display !== 'none');
   }
-
   handleKeyDown(event) {
     if (this.blockedInput(event)) return;
     const key = event.key.toLowerCase();
-    if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
-      event.preventDefault();
-      this.keys.add(key);
-      this.destination = null;
-      this.pendingAction = null;
-    }
-    if (key === 'e' && !event.repeat) {
-      event.preventDefault();
-      const hotspot = this.nearestHotspot();
-      if (hotspot) this.onInteract(hotspot.action);
-    }
+    if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(key)) { event.preventDefault(); this.keys.add(key); this.cancelRoute(); }
+    if (key === 'e' && !event.repeat) { event.preventDefault(); const spot = this.nearestHotspot(); if (spot) this.activate(spot.action); }
   }
-
-  handleKeyUp(event) {
-    this.keys.delete(event.key.toLowerCase());
-  }
-
-  pointerPosition(event) {
-    const rect = this.canvas.getBoundingClientRect();
-    return { x: (event.clientX - rect.left - this.offsetX) / this.scale, y: (event.clientY - rect.top - this.offsetY) / this.scale };
-  }
-
-  handlePointerMove(event) {
-    this.pointer = this.pointerPosition(event);
-    this.canvas.style.cursor = this.hotspotAt(this.pointer) ? 'pointer' : 'crosshair';
-  }
-
+  pointerPosition(event) { const rect = this.canvas.getBoundingClientRect(); return {x:(event.clientX-rect.left-this.offsetX)/this.scale,y:(event.clientY-rect.top-this.offsetY)/this.scale}; }
+  handlePointerMove(event) { this.pointer = this.pointerPosition(event); this.canvas.style.cursor = this.hotspotAt(this.pointer) ? 'pointer' : 'crosshair'; }
   hotspotAt(point) {
-    return this.hotspots.find((spot) =>
-      (Math.abs(point.x - spot.labelX) < 70 && Math.abs(point.y - spot.labelY) < 15)
-      || distance(point, spot) < 33
-      || (spot.action === 'work' && point.x > 170 && point.x < 318 && point.y > 185 && point.y < 270)
-      || (spot.action === 'coffee' && point.x > 90 && point.x < 175 && point.y > 292 && point.y < 397)
-      || (spot.action === 'board' && point.x > 642 && point.x < 781 && point.y > 50 && point.y < 127)
-      || (spot.action === 'finance' && point.x > 604 && point.x < 777 && point.y > 222 && point.y < 292)
-      || (spot.action === 'rest' && point.x > 620 && point.x < 805 && point.y > 365 && point.y < 430));
+    return this.hotspots.find((spot) => (Math.abs(point.x-spot.labelX) < Math.max(62,spot.label.length*4.5) && Math.abs(point.y-spot.labelY) < 15)
+      || distance(point,spot)<28 || (point.x>=spot.bounds.x && point.x<=spot.bounds.x+spot.bounds.w && point.y>=spot.bounds.y && point.y<=spot.bounds.y+spot.bounds.h));
   }
-
   handlePointerDown(event) {
     if (this.blockedInput(event)) return;
-    this.canvas.focus({ preventScroll: true });
-    const point = this.pointerPosition(event);
-    const hotspot = this.hotspotAt(point);
-    if (hotspot && distance(this.player, hotspot) <= hotspot.range) {
-      this.onInteract(hotspot.action);
-      return;
+    this.canvas.focus({preventScroll:true});
+    const point = this.pointerPosition(event), station = this.hotspotAt(point);
+    if (station) { this.requestInteraction(station.action); return; }
+    const target = {x:clamp(point.x,85,1195),y:clamp(point.y,195,756)};
+    if (this.canStand(target.x,target.y)) this.walkTo(target);
+  }
+  walkTo(target, action = null) {
+    if (!this.canStand(target.x,target.y)) return false;
+    const path = this.findPath(this.player,target);
+    if (!path) return false;
+    this.keys.clear(); this.destination = {x:target.x,y:target.y}; this.path = path; this.pendingAction = action; return true;
+  }
+  nearestHotspot() { return this.hotspots.filter((spot) => this.isNearStation(spot.action)).sort((a,b) => distance(this.player,a)-distance(this.player,b))[0]; }
+  canStand(x,y) {
+    const epsilon = 1e-6;
+    return Number.isFinite(x) && Number.isFinite(y) && x>=85 && x<=1195 && y>=195 && y<=756
+      && !this.obstacles.some((o) => x>o.x-11+epsilon && x<o.x+o.w+11-epsilon && y>o.y-4+epsilon && y<o.y+o.h+5-epsilon);
+  }
+  canTravelSegment(start,end) {
+    for(let step=1;step<=4;step++) {
+      if(!this.canStand(start.x+(end.x-start.x)*step/4,start.y+(end.y-start.y)*step/4)) return false;
     }
-    const target = hotspot ? { x: hotspot.x, y: hotspot.y } : { x: clamp(point.x, 99, 827), y: clamp(point.y, 151, 474) };
-    if (!this.canStand(target.x, target.y)) return;
-    this.destination = target;
-    this.pendingAction = hotspot?.action || null;
-    this.keys.clear();
-    this.path = this.findPath(this.player, target);
+    return true;
   }
-
-  nearestHotspot() {
-    return this.hotspots.filter((spot) => distance(this.player, spot) <= spot.range).sort((a, b) => distance(this.player, a) - distance(this.player, b))[0];
-  }
-
-  canStand(x, y) {
-    if (x < 98 || x > 827 || y < 151 || y > 475) return false;
-    return !this.obstacles.some((o) => x > o.x - 11 && x < o.x + o.w + 11 && y > o.y - 4 && y < o.y + o.h + 5);
-  }
-
   nearestWalkablePosition(position) {
-    const step = 8;
-    for (let ring = 1; ring <= 50; ring++) {
-      let nearest = null;
-      let nearestDistance = Infinity;
-      for (let offset = -ring; offset <= ring; offset++) {
-        for (const [dx, dy] of [[offset, -ring], [offset, ring], [-ring, offset], [ring, offset]]) {
-          const candidate = { x: position.x + dx * step, y: position.y + dy * step };
-          const candidateDistance = dx * dx + dy * dy;
-          if (candidateDistance < nearestDistance && this.canStand(candidate.x, candidate.y)) {
-            nearest = candidate;
-            nearestDistance = candidateDistance;
-          }
-        }
+    for (let ring=1;ring<=100;ring++) {
+      let result=null, best=Infinity;
+      for (let offset=-ring;offset<=ring;offset++) for (const [dx,dy] of [[offset,-ring],[offset,ring],[-ring,offset],[ring,offset]]) {
+        const p={x:position.x+dx*8,y:position.y+dy*8}, d=dx*dx+dy*dy;
+        if (d<best && this.canStand(p.x,p.y)) {result=p;best=d;}
       }
-      if (nearest) return nearest;
+      if(result) return result;
     }
     return null;
   }
-
-  // A small grid routes pointer movement around desks instead of stopping at furniture.
-  findPath(start, end) {
-    const unit = 15;
-    const cols = 50;
-    const rows = 23;
-    const origin = { x: 98, y: 151 };
-    const cell = (point) => ({ x: clamp(Math.round((point.x - origin.x) / unit), 0, cols - 1), y: clamp(Math.round((point.y - origin.y) / unit), 0, rows - 1) });
-    const key = (p) => p.y * cols + p.x;
-    const world = (p) => ({ x: origin.x + p.x * unit, y: origin.y + p.y * unit });
-    const a = cell(start), b = cell(end);
-    const open = [a];
-    const cameFrom = new Map();
-    const costs = new Map([[key(a), 0]]);
-    const visited = new Set();
-    let found = null;
-    while (open.length) {
-      open.sort((p, q) => (costs.get(key(p)) + Math.hypot(p.x - b.x, p.y - b.y)) - (costs.get(key(q)) + Math.hypot(q.x - b.x, q.y - b.y)));
-      const current = open.shift();
-      if (current.x === b.x && current.y === b.y) { found = current; break; }
+  findPath(start,end) {
+    const unit=14, cols=81, rows=41, origin={x:85,y:195};
+    const cell=(p)=>({x:clamp(Math.round((p.x-origin.x)/unit),0,cols-1),y:clamp(Math.round((p.y-origin.y)/unit),0,rows-1)});
+    const key=(p)=>p.y*cols+p.x, world=(p)=>({x:origin.x+p.x*unit,y:origin.y+p.y*unit});
+    const a=cell(start), b=cell(end), open=[a], costs=new Map([[key(a),0]]), parents=new Map(), visited=new Set();
+    let found=null;
+    while(open.length) {
+      open.sort((p,q)=>(costs.get(key(p))+Math.hypot(p.x-b.x,p.y-b.y))-(costs.get(key(q))+Math.hypot(q.x-b.x,q.y-b.y)));
+      const current=open.shift(); if(visited.has(key(current))) continue;
+      if(current.x===b.x && current.y===b.y) {found=current;break;}
       visited.add(key(current));
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-        const next = { x: current.x + dx, y: current.y + dy };
-        const position = world(next);
-        if (next.x < 0 || next.x >= cols || next.y < 0 || next.y >= rows || visited.has(key(next)) || !this.canStand(position.x, position.y)) continue;
-        if (dx && dy && (!this.canStand(world(current).x + dx * unit, world(current).y) || !this.canStand(world(current).x, world(current).y + dy * unit))) continue;
-        const cost = costs.get(key(current)) + Math.hypot(dx, dy);
-        if (cost < (costs.get(key(next)) ?? Infinity)) {
-          cameFrom.set(key(next), current);
-          costs.set(key(next), cost);
-          open.push(next);
-        }
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]) {
+        const next={x:current.x+dx,y:current.y+dy}, position=world(next), here=world(current);
+        if(next.x<0 || next.x>=cols || next.y<0 || next.y>=rows || visited.has(key(next)) || !this.canStand(position.x,position.y)) continue;
+        if(dx && dy && (!this.canStand(here.x+dx*unit,here.y) || !this.canStand(here.x,here.y+dy*unit))) continue;
+        const cost=costs.get(key(current))+Math.hypot(dx,dy);
+        if(cost<(costs.get(key(next))??Infinity)) {costs.set(key(next),cost);parents.set(key(next),current);open.push(next);}
       }
     }
-    if (!found) return [end];
-    const result = [end];
-    while (key(found) !== key(a)) {
-      result.unshift(world(found));
-      found = cameFrom.get(key(found));
-    }
+    if(!found) return null;
+    const result=[{...end}];
+    while(key(found)!==key(a)) {result.unshift(world(found));found=parents.get(key(found));}
+    // The actual station can be closer to an obstacle than its rounded grid cell.
     return result;
   }
-
   frame(timestamp) {
-    if (this.destroyed) return;
-    const dt = Math.min((timestamp - (this.lastTime || timestamp)) / 1000, 0.045);
-    this.lastTime = timestamp;
-    this.time += dt;
-    this.update(dt);
-    this.draw();
-    this.raf = requestAnimationFrame(this.frame);
+    if(this.destroyed) return;
+    const dt=Math.min((timestamp-(this.lastTime||timestamp))/1000,.045);this.lastTime=timestamp;this.time+=dt;
+    this.update(dt);this.updateCamera();this.draw();this.raf=requestAnimationFrame(this.frame);
   }
-
   update(dt) {
-    if (this.blockedInput()) {
-      this.keys.clear();
-      this.player.moving = false;
-      return;
+    this.moveReportElapsed+=dt;
+    if(this.blockedInput()) {this.keys.clear();this.player.moving=false;this.reportMovement(true);return;}
+    let dx=(this.keys.has('d')||this.keys.has('arrowright')?1:0)-(this.keys.has('a')||this.keys.has('arrowleft')?1:0);
+    let dy=(this.keys.has('s')||this.keys.has('arrowdown')?1:0)-(this.keys.has('w')||this.keys.has('arrowup')?1:0);
+    let pointerTravel=false, target=null;
+    if(!dx && !dy && this.destination) {
+      if(distance(this.player,this.destination)<5) {const action=this.pendingAction;this.cancelRoute();this.player.moving=false;this.reportMovement(true);if(action)this.activate(action);return;}
+      while(this.path?.length>1 && distance(this.player,this.path[0])<1e-7) this.path.shift();
+      target=this.path?.[0]||this.destination;dx=target.x-this.player.x;dy=target.y-this.player.y;pointerTravel=true;
     }
-    let dx = (this.keys.has('d') || this.keys.has('arrowright') ? 1 : 0) - (this.keys.has('a') || this.keys.has('arrowleft') ? 1 : 0);
-    let dy = (this.keys.has('s') || this.keys.has('arrowdown') ? 1 : 0) - (this.keys.has('w') || this.keys.has('arrowup') ? 1 : 0);
-    if (!dx && !dy && this.destination) {
-      let target = this.path?.[0] || this.destination;
-      if (distance(this.player, target) < 5) {
-        this.path?.shift();
-        target = this.path?.[0] || this.destination;
+    const magnitude=Math.hypot(dx,dy), before={x:this.player.x,y:this.player.y};
+    if(magnitude) {
+      const amount=pointerTravel?Math.min(WALK_SPEED*dt,magnitude):WALK_SPEED*dt;
+      dx=dx/magnitude*amount;dy=dy/magnitude*amount;
+      // Reach a corner exactly before changing direction; near-corner skipping can
+      // leave feet a floating-point fraction inside a desk's collision boundary.
+      if(pointerTravel && magnitude<=WALK_SPEED*dt && this.canTravelSegment(this.player,target)) {
+        this.player.x=target.x;this.player.y=target.y;
+      } else {
+        if(this.canStand(this.player.x+dx,this.player.y))this.player.x+=dx;
+        if(this.canStand(this.player.x,this.player.y+dy))this.player.y+=dy;
       }
-      if (distance(this.player, this.destination) < 6) {
-        this.destination = null;
-        this.player.moving = false;
-        const action = this.pendingAction;
-        this.pendingAction = null;
-        if (action) this.onInteract(action);
-        return;
-      }
-      dx = target.x - this.player.x;
-      dy = target.y - this.player.y;
+      this.player.facing=Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up');
     }
-    const magnitude = Math.hypot(dx, dy);
-    this.player.moving = magnitude > 0;
-    if (magnitude) {
-      const previous = { x: this.player.x, y: this.player.y };
-      const step = Math.min(WALK_SPEED * dt, magnitude > 2 ? magnitude : Infinity);
-      dx = dx / magnitude * step;
-      dy = dy / magnitude * step;
-      if (this.canStand(this.player.x + dx, this.player.y)) this.player.x += dx;
-      if (this.canStand(this.player.x, this.player.y + dy)) this.player.y += dy;
-      this.player.facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
-      this.player.step += dt * 12;
-      if (!this.hasMoved && distance(previous, this.player) > 0.1) {
-        this.hasMoved = true;
-        this.onMove({ x: this.player.x, y: this.player.y });
-      }
-    }
+    const travelled=distance(before,this.player);
+    this.player.moving=travelled>.01;
+    if(this.player.moving){this.player.step+=dt*12;this.travelAccumulator+=travelled;this.reportMovement();}
+    else this.reportMovement(true);
   }
-
+  reportMovement(force=false) {
+    if(this.travelAccumulator<=0 || (!force && this.moveReportElapsed<.25))return;
+    const payload={x:this.player.x,y:this.player.y,distance:this.travelAccumulator,station:this.nearestHotspot()?.action||null};
+    this.travelAccumulator=0;this.moveReportElapsed=0;this.onMove(payload);
+  }
+  employees() {return Array.isArray(this.state.employees)?this.state.employees:[];}
+  hasFurniture(id) {return (this.state.furniture||[]).some((item)=>(typeof item==='string'?item:item.id)===id);}
+  ownedFurniture() {return (this.state.furniture||[]).map((item)=>typeof item==='string'?item:`${item.id||''} ${item.name||''}`).join(' ').toLowerCase();}
   rect(ctx, x, y, w, h, color) {
     ctx.fillStyle = color;
     ctx.fillRect(Math.round(x), Math.round(y), w, h);
@@ -344,84 +304,121 @@ export class OfficeScene {
     ctx.fill();
   }
 
-  renderBackground() {
-    const c = this.background.getContext('2d');
-    c.clearRect(0, 0, WIDTH, HEIGHT);
-    // Subtle studio backdrop and the elevated room platform.
-    const gradient = c.createRadialGradient(455, 260, 70, 460, 290, 600);
-    gradient.addColorStop(0, '#243e35');
-    gradient.addColorStop(1, '#14271f');
-    c.fillStyle = gradient;
-    c.fillRect(0, 0, WIDTH, HEIGHT);
-    this.ellipse(c, 464, 490, 400, 30, '#10231c');
-    this.rect(c, 77, 135, 774, 365, '#725943');
-    this.rect(c, 84, 138, 759, 352, '#ebce9f');
-    this.rect(c, 84, 482, 759, 9, '#b28960');
-    this.rect(c, 84, 491, 759, 7, '#614e39');
-    // Staggered oak planks.
-    for (let row = 0; row < 13; row++) {
-      const y = 139 + row * 27;
-      const colors = ['#dfbb88', '#e4c293', '#dbb580', '#e8c99a'];
-      this.rect(c, 85, y, 756, 26, colors[row % colors.length]);
-      this.rect(c, 85, y + 25, 756, 1, '#cda679');
-      for (let x = 86 + (row % 2 ? 53 : 145); x < 840; x += 190) {
-        this.rect(c, x, y + 1, 1, 24, '#c5a075');
-        this.rect(c, x + 9, y + 8, 44, 1, '#d6ad7c');
-        this.rect(c, x + 85, y + 18, 28, 1, '#d2aa79');
-      }
-    }
-    // Green walls and warm wooden trim.
-    this.rect(c, 79, 30, 768, 108, PALETTE.wall);
-    this.rect(c, 79, 30, 768, 5, '#59816a');
-    this.rect(c, 79, 122, 768, 13, '#214439');
-    this.rect(c, 83, 133, 760, 5, '#ae855a');
-    this.polygon(c, [[49, 54], [79, 30], [79, 482], [49, 501]], '#1d4437');
-    this.rect(c, 75, 36, 7, 449, '#376453');
-    this.polygon(c, [[49, 490], [79, 473], [79, 486], [49, 505]], '#836746');
-    for (let x = 90; x < 839; x += 42) this.rect(c, x, 39, 1, 79, '#315d4d');
-    this.drawWindow(c, 122, 49, 179, 73);
-    this.drawWindow(c, 357, 49, 177, 73);
-    // Warm afternoon light falls across the floor.
-    c.save();
-    c.globalAlpha = 0.1;
-    this.polygon(c, [[127, 138], [207, 138], [425, 467], [330, 467]], '#fff9ca');
-    this.polygon(c, [[248, 138], [286, 138], [515, 463], [462, 463]], '#fff9ca');
-    this.polygon(c, [[361, 138], [516, 138], [800, 467], [605, 467]], '#fff9ca');
-    c.restore();
-    // Framed abstract art, clock, and project board.
-    this.rect(c, 564, 55, 43, 52, '#17372d');
-    this.rect(c, 567, 54, 37, 48, '#d9af74');
-    this.rect(c, 571, 58, 29, 40, '#f3e5bc');
-    this.rect(c, 575, 65, 20, 13, '#b97452');
-    this.polygon(c, [[574, 94], [585, 76], [596, 94]], '#809b72');
-    this.ellipse(c, 821, 67, 17, 17, '#163c31');
-    this.ellipse(c, 820, 65, 15, 15, '#e9dfc1');
-    this.rect(c, 819, 54, 2, 12, '#3e5647');
-    this.rect(c, 820, 64, 8, 2, '#3e5647');
-    this.drawBoard(c);
-    // An inviting woven rug leaves a clear path through the room.
-    this.rect(c, 324, 291, 248, 169, '#c39a72');
-    this.rect(c, 328, 294, 240, 160, '#bc785a');
-    this.rect(c, 337, 301, 222, 146, '#d4976e');
-    this.rect(c, 343, 307, 210, 134, '#c5805e');
-    for (let x = 338; x < 559; x += 10) {
-      this.rect(c, x, 296, 5, 3, '#ead3a8');
-      this.rect(c, x, 449, 5, 3, '#ead3a8');
-    }
-    for (let y = 314; y < 435; y += 8) this.rect(c, 348, y, 199, 1, '#c98a64');
-    this.polygon(c, [[440, 333], [488, 371], [440, 410], [393, 371]], '#d59b72');
-    this.polygon(c, [[440, 348], [469, 371], [440, 394], [412, 371]], '#bf7756');
-    this.rect(c, 439, 351, 3, 40, '#e9bf8b');
-    this.rect(c, 419, 370, 44, 3, '#e9bf8b');
-    // Tiny entry mat and a discreet plant stand.
-    this.rect(c, 438, 461, 89, 24, '#43604a');
-    this.rect(c, 443, 465, 79, 16, '#647c57');
-    c.fillStyle = '#d8dbb1';
-    c.font = 'bold 8px monospace';
-    c.textAlign = 'center';
-    c.fillText('BEM-VINDO', 482, 476);
-  }
 
+  renderBackground() {
+    const c=this.background.getContext('2d');
+    c.clearRect(0,0,WIDTH,HEIGHT);
+    const gradient=c.createRadialGradient(640,360,70,640,360,780);gradient.addColorStop(0,'#294738');gradient.addColorStop(1,'#14261e');
+    c.fillStyle=gradient;c.fillRect(0,0,WIDTH,HEIGHT);
+    this.ellipse(c,641,777,596,29,'#0e2018');
+    this.rect(c,63,176,1156,604,'#775b3e');this.rect(c,68,181,1148,589,'#e3bd8e');
+    c.save();c.beginPath();c.rect(68,181,1148,589);c.clip();
+    for(let row=0;row<23;row++){
+      const y=181+row*26;this.rect(c,68,y,1148,25,['#dfba88','#e6c396','#dcb480','#e3bd8b'][row%4]);
+      this.rect(c,68,y+25,1148,1,'#c89f72');
+      for(let x=70+(row%2?68:174);x<1215;x+=198){this.rect(c,x,y+1,1,24,'#bf976d');this.rect(c,x+14,y+7,47,1,'#d2a676');this.rect(c,x+80,y+19,42,1,'#cfa373');}
+    }
+    c.restore();
+    this.rect(c,67,763,1149,9,'#b78a5d');this.rect(c,67,773,1149,8,'#5c4c36');
+    this.rect(c,65,73,1152,106,'#285747');this.rect(c,65,73,1152,5,'#5c8068');
+    this.rect(c,65,165,1152,14,'#214237');this.rect(c,67,179,1149,5,'#b58b5c');
+    for(let x=80;x<1208;x+=39)this.rect(c,x,83,1,74,'#315e4c');
+    this.polygon(c,[[42,91],[65,73],[65,770],[42,788]],'#1b4132');this.rect(c,62,79,5,688,'#3a6851');
+    this.polygon(c,[[42,779],[65,762],[65,777],[42,792]],'#8e6a45');
+    this.drawWindow(c,108,88,163,77);this.drawWindow(c,498,88,179,77);this.drawWindow(c,926,88,139,77);
+    c.save();c.globalAlpha=.085;
+    this.polygon(c,[[108,185],[256,185],[541,588],[332,588]],'#fff9d4');
+    this.polygon(c,[[508,185],[661,185],[902,570],[695,570]],'#fff9d4');
+    this.polygon(c,[[931,185],[1057,185],[1210,441],[1141,441]],'#fff9d4');c.restore();
+    this.rug(c,103,216,328,225,'#799078','#6f846c');
+    this.rug(c,493,220,338,171,'#a89b79','#968a6b');
+    this.rug(c,899,220,285,171,'#80968a','#6c8577');
+    this.rug(c,233,582,211,153,'#c68a63','#b57854');
+    this.rug(c,496,510,347,109,'#a5aa86','#929970');
+    this.rug(c,920,542,271,129,'#879e9b','#708784');
+    // The studio's central circulation is intentionally clear and wide.
+    c.font='600 10px system-ui,sans-serif';c.fillStyle='#997b58';c.textAlign='center';
+    c.fillText('C O N S T R U I R   •   C O N V E R S A R   •   C R E S C E R',640,449);
+    this.rect(c,497,458,286,1,'#c29b70');
+    this.rect(c,108,457,112,10,'#a1815c');this.rect(c,111,451,106,7,'#c7a374');
+    this.rect(c,504,481,141,5,'#be9563');this.rect(c,714,482,131,5,'#be9563');
+    this.rect(c,909,490,280,8,'#bc9363');
+    this.rect(c,565,716,107,31,'#46644c');this.rect(c,570,721,97,20,'#79916a');
+    c.fillStyle='#e2dec0';c.font='600 8px monospace';c.fillText('OLÁ, MUNDO.',618,734);
+  }
+  rug(c,x,y,w,h,outer,inner){
+    this.rect(c,x+2,y+3,w,h,'#a2856266');this.rect(c,x,y,w,h,outer);this.rect(c,x+6,y+6,w-12,h-12,inner);
+    for(let offset=10;offset<w-10;offset+=10){this.rect(c,x+offset,y+2,4,2,'#dad1a077');this.rect(c,x+offset,y+h-4,4,2,'#dad1a077');}
+    for(let row=10;row<h-8;row+=7)this.rect(c,x+9,y+row,w-18,1,outer+'aa');
+  }
+  at(c,x,y,draw,scale=1){c.save();c.translate(x,y);c.scale(scale,scale);draw();c.restore();}
+  text(c,label,x,y,size=11,color='#e0e3c8',align='left',weight=500){c.font=`${weight} ${size}px system-ui,sans-serif`;c.fillStyle=color;c.textAlign=align;c.textBaseline='alphabetic';c.fillText(String(label),x,y);}
+  divider(c,x,y,h){this.rect(c,x-2,y,h>190?15:14,h,'#6b7d5c');this.rect(c,x-3,y-7,16,h,'#3e6451');this.rect(c,x-3,y-7,4,h,'#83916a');for(let offset=19;offset<h;offset+=37)this.rect(c,x+2,y+offset,7,3,'#52735b');this.rect(c,x-3,y+h-8,17,8,'#294e3d');}
+  drawProjects(c){
+    this.rect(c,307,89,139,88,'#193e30');this.rect(c,305,86,139,86,'#ba9867');this.rect(c,310,91,129,75,'#eee3c6');
+    const projects=(this.state.projects||[]).filter((p)=>p.status!=='delivered');
+    ['A FAZER','FAZENDO','PRONTO'].forEach((label,index)=>{this.text(c,label,315+index*41,103,7,'#65705e');this.rect(c,350+index*41,108,1,47,'#d1cbb0');});
+    [[316,111,'#ddb578'],[316,136,'#aabf8c'],[357,111,'#d49c81'],[398,111,'#93b4a1']].forEach(([x,y,color],index)=>{
+      this.rect(c,x,y,29,21,color);this.rect(c,x+4,y+5,19,1,'#8e8267');this.rect(c,x+4,y+10,13,1,'#8e8267');
+      if(index===2&&projects[0]){const progress=clamp((projects[0].progress||0)/(projects[0].hours||1),0,1);this.rect(c,x+3,y+15,23,3,'#b88065');this.rect(c,x+3,y+15,Math.round(23*progress),3,'#627e5b');}
+    });
+    this.text(c,`${projects.length} EM ANDAMENTO`,374,160,7,'#5c6f58','center');
+    if(this.hasFurniture('whiteboard')){this.rect(c,398,136,29,20,'#a4bab0');this.rect(c,403,142,17,1,'#687e6c');this.rect(c,405,147,11,1,'#687e6c');}
+  }
+  drawWorldData(c){
+    // These are physical displays mounted to the appropriate sector, not a dashboard.
+    this.text(c,(this.state.profile?.company||'Seu estúdio').toUpperCase().slice(0,28),104,52,18,'#d9dcb6','left',700);
+    this.text(c,'SOFTWARE HOUSE  /  DESDE 2026',104,66,8,'#839f83');
+    this.rect(c,704,98,136,64,'#1b3c30');this.rect(c,708,102,128,55,'#ebdfbd');
+    this.text(c,'CAIXA DE ENTRADA',772,114,8,'#61745a','center',700);
+    this.text(c,`${(this.state.leads||[]).length} CONTATOS`,772,136,14,'#4d6f50','center',700);
+    this.text(c,'cada conversa abre uma porta',772,149,6,'#918871','center');
+    this.rect(c,1080,95,116,70,'#163d30');this.rect(c,1084,99,108,62,'#214d3b');
+    this.text(c,'CAIXA DA EMPRESA',1138,114,8,'#a0b68e','center',600);
+    const cash=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}).format(this.state.cash||0);
+    this.text(c,cash,1138,137,15,(this.state.cash||0)<0?'#efaf8c':'#e4d99f','center',700);
+    this.text(c,`${(this.state.receivables||[]).length} pagamentos a receber`,1138,152,7,'#8faf93','center');
+    this.rect(c,689,49,151,25,'#1b4234');this.text(c,`REPUTAÇÃO  ${Math.round(this.state.reputation||0)}`,764,65,10,'#d9cf99','center',700);
+    const trophies=Math.min(5,Math.floor((this.state.reputation||0)/20));
+    for(let i=0;i<trophies;i++){this.rect(c,852+i*12,54,7,8,'#d9b56c');this.rect(c,854+i*12,62,3,5,'#d9b56c');this.rect(c,851+i*12,67,9,2,'#b29355');}
+    this.rect(c,104,459,92,25,'#2f4d38');this.text(c,'ENERGIA',112,470,6,'#aebd92');this.rect(c,112,475,75,3,'#193e2a');this.rect(c,112,475,Math.round(75*clamp(this.state.energy??100,0,100)/100),3,'#c1cd8c');
+    this.rect(c,497,489,29,29,'#e9d9b2');this.text(c,this.employees().length,511,501,10,'#60734f','center',700);
+    this.text(c,'PESSOAS',511,510,5,'#60734f','center',600);this.rect(c,501,513,21,2,'#bdbea0');
+    this.rect(c,501,513,Math.round(21*clamp(this.state.teamMorale??this.state.morale??80,0,100)/100),2,'#729c6b');
+    this.rect(c,938,494,10,10,'#a4b17e');this.rect(c,951,494,10,10,'#b2c393');this.rect(c,964,494,10,10,'#d4b080');
+  }
+  drawDraftingTable(c){
+    this.ellipse(c,779,598,76,10,'#b39670');this.rect(c,724,561,8,33,'#7a654b');this.rect(c,828,561,8,33,'#7a654b');
+    this.rect(c,713,524,133,56,'#9e7950');this.rect(c,712,519,135,53,'#d2aa75');this.rect(c,725,527,94,34,'#adc0bc');
+    for(let x=731;x<818;x+=12)this.rect(c,x,529,1,29,'#819f98');for(let y=531;y<560;y+=8)this.rect(c,728,y,88,1,'#819f98');
+    this.rect(c,744,537,40,17,'#dfe1c5');this.rect(c,748,540,14,11,'#89a796');this.rect(c,769,540,10,11,'#89a796');
+    this.rect(c,831,534,3,21,'#b56549');this.rect(c,824,535,3,20,'#e0d097');this.rect(c,725,563,64,3,'#ead5a4');
+    this.rect(c,716,499,22,21,'#c89d6a');this.ellipse(c,727,499,11,4,'#d8b886');
+  }
+  drawReception(c){
+    this.ellipse(c,624,713,78,10,'#b59873');this.rect(c,553,658,141,47,'#52734e');this.rect(c,558,665,132,32,'#365940');
+    this.rect(c,550,650,147,13,'#ddb47b');this.rect(c,555,648,137,6,'#edcc94');
+    this.rect(c,568,638,30,14,'#a57551');this.rect(c,570,639,26,10,'#e1d0a5');this.rect(c,585,638,2,14,'#668468');
+    this.rect(c,617,634,33,16,'#ecdfb4');this.text(c,'DIÁRIO',633,645,6,'#63734e','center',700);
+    this.rect(c,666,631,18,20,'#b17c53');this.at(c,675,631,()=>this.drawPlant(c,0,0,.3));
+    this.text(c,'BEM-VINDO AO ESTÚDIO',624,684,9,'#e2dcad','center',600);
+  }
+  drawExit(c){
+    this.rect(c,1121,704,80,60,'#9c8060');this.rect(c,1125,709,72,53,'#59775a');this.rect(c,1130,714,62,42,'#87a17a');
+    this.rect(c,1140,724,3,21,'#bcc6a0');this.rect(c,1150,724,3,21,'#bcc6a0');this.rect(c,1160,724,3,21,'#bcc6a0');
+    this.polygon(c,[[1180,729],[1180,738],[1190,733]],'#e5e5bc');
+    this.text(c,'ATÉ AMANHÃ',1157,755,7,'#e5e5bd','center',700);
+  }
+  drawLab(c){
+    this.drawDesk(c,965,559,175,'finance');
+    this.rect(c,1081,531,43,27,'#355c54');this.rect(c,1085,535,35,19,'#7caba0');
+    this.rect(c,1097,538,10,13,'#cad9ba');this.rect(c,1100,541,4,7,'#6a9d8e');
+    this.rect(c,969,541,15,17,'#b2c1a5');this.rect(c,973,527,7,16,'#b2c1a5');this.rect(c,973,539,7,9,'#bf9967');
+    this.rect(c,1130,546,10,9,'#b58459');
+    const product=this.state.product;
+    this.text(c,product?.name?String(product.name).slice(0,20):'UMA IDEIA PODE VIRAR PRODUTO',1054,688,9,'#62785c','center',600);
+    const progress=clamp(product?.progress||0,0,100);this.rect(c,1001,696,105,3,'#b69772');this.rect(c,1001,696,Math.round(progress*1.05),3,'#58877a');
+  }
   drawWindow(c, x, y, w, h) {
     this.rect(c, x - 5, y - 5, w + 10, h + 12, '#143b30');
     this.rect(c, x - 3, y - 3, w + 6, h + 6, '#caad79');
@@ -448,35 +445,6 @@ export class OfficeScene {
     this.rect(c, x + 17, y + 5, 4, 9, '#d4e6df');
   }
 
-  drawBoard(c) {
-    this.rect(c, 641, 50, 143, 80, '#163a30');
-    this.rect(c, 638, 46, 144, 78, '#bd9867');
-    this.rect(c, 643, 51, 134, 68, '#eee3c6');
-    c.font = 'bold 7px monospace';
-    c.fillStyle = '#64705c';
-    c.textAlign = 'left';
-    ['IDEIAS', 'FAZENDO', 'PRONTO'].forEach((label, index) => {
-      const x = 649 + index * 43;
-      c.fillText(label, x, 64);
-      this.rect(c, x + 36, 69, 1, 41, '#d5ceb5');
-    });
-    [[650, 72, '#e4b974'], [650, 94, '#adbd8b'], [693, 72, '#e0a18b'], [693, 94, '#e1b573'], [736, 72, '#a9b99d']].forEach(([x, y, color]) => {
-      this.rect(c, x + 1, y + 2, 29, 17, '#d0c4a7');
-      this.rect(c, x, y, 29, 17, color);
-      this.rect(c, x + 5, y + 6, 16, 1, '#897c65');
-      this.rect(c, x + 5, y + 10, 12, 1, '#897c65');
-    });
-    if (/whiteboard|quadro/.test(this.ownedFurniture())) {
-      this.rect(c, 736, 94, 29, 17, '#a4bcb3');
-      this.rect(c, 741, 100, 18, 2, '#607c6a');
-      this.rect(c, 742, 105, 11, 1, '#607c6a');
-      this.rect(c, 676, 83, 8, 2, '#789576');
-      this.polygon(c, [[683, 80], [687, 84], [683, 88]], '#789576');
-      this.rect(c, 719, 83, 8, 2, '#789576');
-      this.polygon(c, [[726, 80], [730, 84], [726, 88]], '#789576');
-    }
-  }
-
   drawDesk(c, x, y, w, kind = 'work') {
     this.ellipse(c, x + w / 2, y + 74, w / 2 + 6, 13, '#b5966c');
     this.rect(c, x + 8, y + 47, 9, 31, '#7b6047');
@@ -500,6 +468,12 @@ export class OfficeScene {
     if (kind === 'finance') {
       [9, 17, 13, 24, 21].forEach((height, index) => this.rect(c, x + 40 + index * 10, y - 5 - height, 6, height, ['#83b896', '#dab878'][index % 2]));
       this.rect(c, x + 38, y - 5, 55, 1, '#50665c');
+    } else if (kind === 'sales' || kind === 'team') {
+      this.rect(c, x + 38, y - 29, 18, 5, '#94b89a');
+      this.rect(c, x + 38, y - 22, 38, 7, '#d7c6a1');
+      this.rect(c, x + 54, y - 12, 36, 7, '#a1bba2');
+      this.rect(c, x + 42, y - 19, 24, 1, '#869a84');
+      this.rect(c, x + 61, y - 9, 20, 1, '#6c8a77');
     } else {
       for (let line = 0; line < 7; line++) {
         this.rect(c, x + 37, y - 29 + line * 4, 3, 1, '#566d7c');
@@ -629,23 +603,6 @@ export class OfficeScene {
     c.restore();
   }
 
-  drawShelf(c) {
-    const x = 89, y = 147;
-    this.rect(c, x - 3, y - 17, 54, 69, '#344d37');
-    this.rect(c, x, y - 22, 48, 70, '#b99161');
-    this.rect(c, x + 4, y - 17, 40, 25, '#785f40');
-    this.rect(c, x + 4, y + 14, 40, 26, '#785f40');
-    const colors = ['#cc8b62', '#91a276', '#dbc493', '#688c90', '#b27666'];
-    for (let index = 0; index < 5; index++) {
-      this.rect(c, x + 7 + index * 7, y - 13 + index % 2 * 2, 6, 20 - index % 2 * 2, colors[index]);
-      this.rect(c, x + 8 + index * 7, y - 9, 4, 1, '#dcccaa');
-    }
-    this.rect(c, x + 8, y + 29, 19, 7, '#b5815c');
-    this.rect(c, x + 8, y + 23, 20, 6, '#cbb68f');
-    this.rect(c, x + 31, y + 19, 9, 17, '#d7c8a2');
-    this.rect(c, x + 2, y + 41, 45, 7, '#c59c67');
-  }
-
   drawLamp(c) {
     this.ellipse(c, 591, 410, 17, 6, '#b39973');
     this.rect(c, 581, 405, 21, 5, '#43503c');
@@ -696,155 +653,77 @@ export class OfficeScene {
     }
   }
 
-  employees() {
-    if (Array.isArray(this.state.employees)) return this.state.employees;
-    return Array.from({ length: Number(this.state.employees) || 0 }, (_, index) => ({ name: `Pessoa ${index + 1}`, color: ['#87a77b', '#8a9db7', '#bc8aa0'][index % 3] }));
-  }
-
-  ownedFurniture() {
-    return (this.state.furniture || this.state.upgrades || []).map((item) => typeof item === 'string' ? item : `${item.id || ''} ${item.name || ''}`).join(' ').toLowerCase();
-  }
 
   draw() {
-    if (!this.ctx || !this.scale) return;
-    const c = this.ctx;
-    c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    c.fillStyle = '#14271f';
-    c.fillRect(0, 0, this.cssWidth, this.cssHeight);
-    c.translate(this.offsetX, this.offsetY);
-    c.scale(this.scale, this.scale);
-    c.imageSmoothingEnabled = false;
-    c.drawImage(this.background, 0, 0);
-    const nearby = this.nearestHotspot();
-    const hovered = this.pointer ? this.hotspotAt(this.pointer) : null;
-    const highlighted = hovered || nearby;
-    if (highlighted) {
-      c.save();
-      c.globalAlpha = 0.22 + Math.sin(this.time * 3) * 0.04;
-      this.ellipse(c, highlighted.x, highlighted.y, 29, 12, '#eaddab');
-      c.restore();
-      c.strokeStyle = '#efdfaa99';
-      c.lineWidth = 1.5;
-      c.beginPath();
-      c.ellipse(highlighted.x, highlighted.y, 28, 11, 0, 0, Math.PI * 2);
-      c.stroke();
+    if(!this.ctx||!this.scale)return;
+    const c=this.ctx;c.setTransform(this.dpr,0,0,this.dpr,0,0);c.fillStyle='#14271f';c.fillRect(0,0,this.cssWidth,this.cssHeight);
+    c.translate(this.offsetX,this.offsetY);c.scale(this.scale,this.scale);c.imageSmoothingEnabled=false;c.drawImage(this.background,0,0);
+    this.drawWorldData(c);this.drawProjects(c);
+    const nearest=this.nearestHotspot(), hovered=this.pointer?this.hotspotAt(this.pointer):null;
+    const selected=this.hotspots.find((spot)=>spot.action===this.pendingAction)||hovered||nearest;
+    if(selected){c.globalAlpha=.19+Math.sin(this.time*3)*.04;this.ellipse(c,selected.x,selected.y,32,13,'#f4e6aa');c.globalAlpha=1;c.strokeStyle='#f5e2a58a';c.lineWidth=1.5;c.beginPath();c.ellipse(selected.x,selected.y,32,13,0,0,Math.PI*2);c.stroke();}
+    if(this.destination){
+      c.save();c.strokeStyle='#f7e8c259';c.lineWidth=2;c.setLineDash([3,8]);c.beginPath();c.moveTo(this.player.x,this.player.y);this.path?.forEach(p=>c.lineTo(p.x,p.y));c.stroke();c.restore();
+      c.strokeStyle='#f2dfb3a1';c.lineWidth=2;c.beginPath();c.ellipse(this.destination.x,this.destination.y,12,5,0,0,Math.PI*2);c.stroke();
     }
-    if (this.destination) {
-      c.strokeStyle = '#f0ddb79c';
-      c.lineWidth = 2;
-      c.beginPath();
-      c.ellipse(this.destination.x, this.destination.y, 10 + Math.sin(this.time * 5) * 2, 4, 0, 0, Math.PI * 2);
-      c.stroke();
-      this.rect(c, this.destination.x - 1, this.destination.y - 1, 3, 3, '#f5e6be');
-    }
-    const employees = this.employees();
-    const props = [
-      { y: 200, draw: () => this.drawShelf(c) },
-      { y: 210, draw: () => this.drawPlant(c, 812, 201, 1.15) },
-      { y: 275, draw: () => this.drawDesk(c, 170, 194, 148) },
-      { y: 259, draw: () => this.drawDesk(c, 375, 185, 155) },
-      { y: 291, draw: () => this.drawChair(c, 244, 289) },
-      { y: 274, draw: () => this.drawChair(c, 453, 274) },
-      { y: 305, draw: () => this.drawDesk(c, 604, 226, 173, 'finance') },
-      { y: 319, draw: () => this.drawChair(c, 691, 319, '#6a7066') },
-      { y: 399, draw: () => this.drawCoffee(c) },
-      { y: 410, draw: () => this.drawLamp(c) },
-      { y: 431, draw: () => this.drawSofa(c) },
-      { y: 470, draw: () => this.drawPlant(c, 821, 465, 0.95) },
-      { y: 463, draw: () => this.drawPlant(c, 108, 461, 0.72) },
-      { y: this.player.y, draw: () => this.drawCharacter(c, this.player, this.state.profile?.avatarColor || '#e8ac6d', true) },
+    const props=[
+      {y:379,draw:()=>this.divider(c,452,191,188)},{y:379,draw:()=>this.divider(c,858,191,188)},
+      {y:716,draw:()=>this.divider(c,452,509,207)},{y:692,draw:()=>this.divider(c,858,510,182)},
+      {y:316,draw:()=>this.drawDesk(c,115,238,158)},{y:309,draw:()=>this.drawDesk(c,290,230,130)},
+      {y:440,draw:()=>this.drawDesk(c,289,362,134)},
+      {y:318,draw:()=>this.drawDesk(c,558,239,164,'sales')},{y:318,draw:()=>this.drawDesk(c,969,239,170,'finance')},
+      {y:337,draw:()=>this.drawChair(c,196,337)},{y:335,draw:()=>this.drawChair(c,352,335)},
+      {y:457,draw:()=>this.drawChair(c,355,457)},{y:340,draw:()=>this.drawChair(c,636,340,'#77876a')},
+      {y:340,draw:()=>this.drawChair(c,1054,340,'#5e766d')},
+      {y:598,draw:()=>this.drawDesk(c,502,520,144,'team')},{y:609,draw:()=>this.drawChair(c,570,607,'#87966b')},
+      {y:601,draw:()=>this.drawDraftingTable(c)},
+      {y:578,draw:()=>this.at(c,10,182,()=>this.drawCoffee(c))},
+      {y:671,draw:()=>this.at(c,-376,240,()=>this.drawSofa(c))},
+      {y:640,draw:()=>this.drawLab(c)},{y:656,draw:()=>this.drawChair(c,1052,654,'#678b82')},
+      {y:709,draw:()=>this.drawReception(c)},{y:766,draw:()=>this.drawExit(c)},
+      {y:242,draw:()=>this.drawPlant(c,97,234,.8)},{y:242,draw:()=>this.drawPlant(c,1188,234,.8)},
+      {y:740,draw:()=>this.drawPlant(c,96,733,.9)},{y:740,draw:()=>this.drawPlant(c,909,731,.75)},
+      {y:572,draw:()=>this.drawPlant(c,410,563,.55)},{y:683,draw:()=>this.at(c,-108,267,()=>this.drawLamp(c))},
+      {y:this.player.y,draw:()=>this.drawCharacter(c,this.player,this.state.profile?.avatarColor||'#e3a46b',true)},
     ];
-    if (employees[0]) props.push({ y: 271, draw: () => this.drawCharacter(c, { x: 453, y: 273, facing: 'up' }, employees[0].color || '#8da17f') });
-    if (employees[1]) props.push({ y: 313, draw: () => this.drawCharacter(c, { x: 692, y: 317, facing: 'up' }, employees[1].color || '#8a9eaf') });
-    const owned = this.ownedFurniture();
-    if (/planta|plant|decor/.test(owned)) props.push({ y: 185, draw: () => this.drawPlant(c, 324, 178, 0.65) });
-    if (/livro|book|estante/.test(owned)) props.push({ y: 148, draw: () => { this.rect(c, 305, 132, 35, 8, '#799075'); this.rect(c, 307, 127, 32, 5, '#c19772'); } });
-    if (/mesa|desk/.test(owned)) {
-      props.push({ y: 457, draw: () => {
-        this.drawDesk(c, 191, 377, 142);
-        this.rect(c, 286, 350, 38, 28, '#324d43');
-        this.rect(c, 289, 353, 32, 21, '#77998a');
-        this.rect(c, 290, 377, 36, 15, '#bbbd9b');
-        this.rect(c, 294, 379, 29, 7, '#878f77');
-      } });
-      props.push({ y: 468, draw: () => this.drawChair(c, 259, 467) });
-      if (employees[2]) props.push({ y: 469, draw: () => this.drawCharacter(c, { x: 259, y: 469, facing: 'up' }, employees[2].color || '#b58a8e') });
-      if (employees[3]) props.push({ y: 470, draw: () => this.drawCharacter(c, { x: 303, y: 470, facing: 'up' }, employees[3].color || '#95a67e') });
+    const employees=this.employees();
+    if(employees[0])props.push({y:336,draw:()=>{this.drawCharacter(c,{x:352,y:337,facing:'up'},employees[0].color||'#8da17f');this.employeeBubble(c,employees[0],352,271);}});
+    if(employees[1])props.push({y:458,draw:()=>{this.drawCharacter(c,{x:355,y:458,facing:'up'},employees[1].color||'#8d9fb4');this.employeeBubble(c,employees[1],355,392);}});
+    if(this.hasFurniture('desk')){
+      props.push({y:449,draw:()=>this.drawDesk(c,115,370,150)});props.push({y:463,draw:()=>this.drawChair(c,188,462)});
+      if(employees[2])props.push({y:464,draw:()=>{this.drawCharacter(c,{x:188,y:464,facing:'up'},employees[2].color||'#b68d83');this.employeeBubble(c,employees[2],188,398);}});
     }
-    if (/computador|computer|monitor/.test(owned)) props.push({ y: 273, draw: () => { this.rect(c, 278, 172, 34, 23, '#254036'); this.rect(c, 281, 175, 28, 17, '#789d91'); this.rect(c, 294, 193, 4, 9, '#335143'); } });
-    props.sort((a, b) => a.y - b.y).forEach((prop) => prop.draw());
-    // Station badges remain crisp, legible and clickable at any display size.
-    this.hotspots.forEach((spot) => this.drawBadge(c, spot, highlighted?.action === spot.action));
-    this.drawPlayerLabel(c, nearby);
-    this.drawAmbientDetails(c);
+    if(this.hasFurniture('monitors'))props.push({y:315,draw:()=>{this.rect(c,225,211,40,25,'#28463a');this.rect(c,228,214,34,19,'#8bac92');this.rect(c,242,234,5,9,'#345042');}});
+    props.sort((a,b)=>a.y-b.y).forEach(prop=>prop.draw());
+    this.hotspots.forEach(spot=>this.drawBadge(c,spot,selected?.action===spot.action));
+    this.drawPlayerLabel(c,nearest);
+    for(let i=0;i<14;i++){c.globalAlpha=.2+Math.sin(this.time+i)*.1;this.rect(c,139+i*69+Math.sin(this.time*.4+i)*3,195+(i*39+this.time*5)%332,2,2,'#fff0be');}c.globalAlpha=1;
   }
-
-  drawBadge(c, spot, active) {
-    c.font = '600 9px system-ui, sans-serif';
-    const width = c.measureText(spot.label).width + 24;
-    const x = spot.labelX - width / 2, y = spot.labelY - 11;
-    c.fillStyle = active ? '#ebd8a9' : '#183a2fe8';
-    c.beginPath();
-    c.roundRect(x, y, width, 23, 5);
-    c.fill();
-    c.strokeStyle = active ? '#f4e8c5' : '#74907566';
-    c.lineWidth = 1;
-    c.stroke();
-    c.fillStyle = active ? '#2c4837' : '#d7dabc';
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.fillText(spot.label, spot.labelX, spot.labelY + 0.5);
-    c.textBaseline = 'alphabetic';
+  employeeBubble(c,employee,x,y){
+    const stressed=(employee.stress||0)>65, morale=employee.morale??80;
+    const label=stressed?'PRECISO DE UMA PAUSA':morale<35?'VAMOS CONVERSAR?':'EM FOCO';
+    const width=stressed?113:morale<35?115:60;
+    c.fillStyle=stressed||morale<35?'#e0b186':'#2f5945dd';c.beginPath();c.roundRect(x-width/2,y-8,width,17,4);c.fill();
+    this.text(c,label,x,y+4,7,stressed||morale<35?'#6b493b':'#c1d4ac','center',600);
   }
-
-  drawPlayerLabel(c, nearby) {
-    const { x, y } = this.player;
-    const name = (this.state.profile?.name || 'Você').split(' ')[0].slice(0, 15);
-    c.font = '600 10px system-ui, sans-serif';
-    c.textAlign = 'center';
-    const width = c.measureText(name).width + 18;
-    c.fillStyle = '#17392ede';
-    c.beginPath();
-    c.roundRect(x - width / 2, y - 72, width, 18, 4);
-    c.fill();
-    c.fillStyle = '#e8e9d1';
-    c.fillText(name, x, y - 59);
-    if (nearby && !this.player.moving) {
-      const actions = { work: 'Trabalhar', coffee: 'Tomar café', board: 'Ver projetos', finance: 'Ver finanças', rest: 'Descansar' };
-      const label = actions[nearby.action];
-      c.font = '500 10px system-ui, sans-serif';
-      const promptWidth = c.measureText(label).width + 43;
-      c.fillStyle = '#e9ddb8';
-      c.beginPath();
-      c.roundRect(x - promptWidth / 2, y + 13, promptWidth, 24, 5);
-      c.fill();
-      this.rect(c, x - promptWidth / 2 + 7, y + 17, 16, 16, '#3a5944');
-      c.fillStyle = '#f0e7c8';
-      c.font = 'bold 10px system-ui, sans-serif';
-      c.fillText('E', x - promptWidth / 2 + 15, y + 29);
-      c.fillStyle = '#3c5140';
-      c.font = '600 10px system-ui, sans-serif';
-      c.textAlign = 'left';
-      c.fillText(label, x - promptWidth / 2 + 30, y + 29);
+  drawBadge(c,spot,active){
+    c.font='700 10px system-ui,sans-serif';const w=c.measureText(spot.label).width+25;
+    c.fillStyle=active?'#e9d9ab':'#193d2fec';c.beginPath();c.roundRect(spot.labelX-w/2,spot.labelY-12,w,26,4);c.fill();
+    c.strokeStyle=active?'#f4e6c1':'#87997b78';c.lineWidth=1;c.stroke();
+    this.text(c,spot.label,spot.labelX,spot.labelY+4,10,active?'#34523c':'#dce1c0','center',700);
+    this.rect(c,spot.labelX-1,spot.labelY+17,2,3,active?'#e9d9ab':'#668369');
+  }
+  drawPlayerLabel(c,nearby){
+    const {x,y}=this.player,name=(this.state.profile?.name||'Você').split(' ')[0].slice(0,15);
+    c.font='600 11px system-ui,sans-serif';const width=c.measureText(name).width+19;
+    c.fillStyle='#183b2ce6';c.beginPath();c.roundRect(x-width/2,y-75,width,20,4);c.fill();this.text(c,name,x,y-61,11,'#eee9cb','center',600);
+    this.polygon(c,[[x-3,y-53],[x+3,y-53],[x,y-49]],'#d6d4a5');
+    if(nearby&&!this.player.moving&&!this.interactionOpen){
+      c.font='600 11px system-ui,sans-serif';const label=nearby.verb,promptW=c.measureText(label).width+46;
+      c.fillStyle='#eee1bb';c.beginPath();c.roundRect(x-promptW/2,y+15,promptW,27,5);c.fill();
+      this.rect(c,x-promptW/2+7,y+20,17,17,'#365b40');this.text(c,'E',x-promptW/2+15.5,y+33,11,'#f1e8c7','center',700);
+      this.text(c,label,x-promptW/2+31,y+33,11,'#3c513c','left',600);
     }
-  }
-
-  drawAmbientDetails(c) {
-    // A few drifting sunlit specks, kept restrained and outside the HUD.
-    for (let index = 0; index < 9; index++) {
-      const x = 181 + index * 58 + Math.sin(this.time * 0.3 + index) * 5;
-      const y = 146 + (index * 43 + this.time * 5) % 240;
-      c.globalAlpha = 0.25 + Math.sin(this.time + index) * 0.12;
-      this.rect(c, x, y, 2, 2, '#fff0bf');
-    }
-    c.globalAlpha = 1;
-    c.font = '500 9px system-ui, sans-serif';
-    c.textAlign = 'left';
-    c.fillStyle = '#9aae95';
-    c.fillText('SEU PRIMEIRO ESCRITÓRIO', 84, 522);
-    c.textAlign = 'right';
-    c.fillStyle = '#d0d9b4';
-    const company = this.state.profile?.company || this.state.profile?.companyName || 'Sua próxima grande ideia começa aqui.';
-    c.fillText(company.slice(0, 45), 841, 522);
+    if(this.pendingAction&&this.player.moving){const station=this.getStation(this.pendingAction);this.text(c,`A caminho: ${station.label.toLowerCase()}`,x,y+19,10,'#3f6246','center',600);}
   }
 }
