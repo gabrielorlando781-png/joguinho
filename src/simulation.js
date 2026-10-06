@@ -1,5 +1,6 @@
 import { createOffice, validOffice, getOfficeOverview, getRoomEffects, getComputerMultiplier, getItemEligibility, getExpansionEligibility, getRoomEligibility, getComputerEligibility, getRoomActionEligibility } from './office-progression.js';
 import { WORK_PUZZLE_COUNT, createWorkPuzzles, validWorkSession } from './work-puzzles.js';
+import { isLocalTestState } from './local-test.js';
 export { OFFICE_STAGES, ROOM_LEVELS, OFFICE_SECTORS, SHOP_ITEMS, COMPUTER_LEVELS, ROOM_ACTIONS, getOfficeOverview, getRoomEffects, getComputerMultiplier, getItemEligibility, getExpansionEligibility, getRoomEligibility, getComputerEligibility, getRoomActionEligibility } from './office-progression.js';
 
 const SAVE_KEY = 'joguinho-save-v1';
@@ -159,11 +160,11 @@ export function createGame(profile = {}) {
   return state;
 }
 
-export function saveGame(state) {
+export function saveGame(state, storageKey = SAVE_KEY) {
   try {
     if (typeof localStorage === 'undefined') return result(false, 'O salvamento não está disponível neste ambiente.');
     if (!validSave(state)) return result(false, 'O estado atual não pôde ser validado. Seu último salvamento foi preservado.');
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state }));
+    localStorage.setItem(storageKey, JSON.stringify({ version: SAVE_VERSION, state }));
     return result(true, 'Jogo salvo neste navegador.');
   } catch {
     return result(false, 'Não foi possível salvar. Verifique o espaço disponível no navegador.');
@@ -235,10 +236,10 @@ function migrateSave(state) {
   return state;
 }
 
-export function loadGame() {
+export function loadGame(storageKey = SAVE_KEY) {
   try {
     if (typeof localStorage === 'undefined') return null;
-    const raw = localStorage.getItem(SAVE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return null;
     const saved = JSON.parse(raw);
     if (!saved || ![1, 2, SAVE_VERSION].includes(saved.version)) return null;
@@ -361,12 +362,12 @@ export function hireEmployee(state, candidateId, contract = 'PJ') {
   if (!candidate) return result(false, 'Essa pessoa não está disponível para contratação.');
   if (!['PJ', 'CLT'].includes(contract)) return result(false, 'Escolha um contrato PJ ou CLT.');
   if (state.employees.some((person) => person.id === candidateId)) return result(false, `${candidate.name} já faz parte do time.`);
-  if (!state.interviews[candidateId]) return result(false, 'Entreviste essa pessoa no RH antes de contratar.');
+  if (!state.interviews[candidateId] && !isLocalTestState(state)) return result(false, 'Entreviste essa pessoa no RH antes de contratar.');
   const workstation = state.office.workstations.find((post) => post.employeeId === null && post.desk && post.chair && post.computerLevel > 0);
   if (!workstation) return result(false, 'Não há posto livre com mesa, cadeira e computador. Complete um posto na loja antes de contratar.');
   const dailyCost = round(candidate.salary / 20 * (contract === 'CLT' ? 1.7 : 1.15));
   if (state.cash < dailyCost * 5 + 550) return result(false, 'Reserve caixa para pelo menos cinco dias de trabalho antes de contratar.');
-  const selectionBonus = Math.max(0, state.interviews[candidateId].score - Math.round(65 + candidate.productivity * 3)) / 100;
+  const selectionBonus = Math.max(0, (state.interviews[candidateId]?.score ?? 0) - Math.round(65 + candidate.productivity * 3)) / 100;
   state.employees.push({ ...candidate, productivity: round(candidate.productivity * (1 + selectionBonus)), contract, hiredDay: state.day, assignment: 'auto', assignmentRole: 'delivery', morale: 75, stress: 15 });
   workstation.employeeId = candidateId;
   addLog(state, `${candidate.name} entrou para o time com contrato ${contract}. Custo por dia útil: R$ ${dailyCost.toFixed(2)}.`);
@@ -634,7 +635,7 @@ export function collectReceivable(state, projectId) {
 
 export function investProduct(state, focus = 'prototype') {
   if (!running(state)) return result(false, 'A empresa está encerrada.');
-  if (state.stats.delivered < 2) return result(false, 'Entregue dois projetos para usar a experiência no seu próprio produto.');
+  if (state.stats.delivered < 2 && !isLocalTestState(state)) return result(false, 'Entregue dois projetos para usar a experiência no seu próprio produto.');
   if (!['prototype', 'research'].includes(focus)) return result(false, 'Escolha protótipo ou pesquisa.');
   if (state.product.stage === 'launched') return result(false, 'Seu MVP já foi lançado e tem receita recorrente.');
   if (state.dailyActions.product >= 1) return result(false, 'Você já investiu no produto hoje. Preserve tempo para os clientes.');

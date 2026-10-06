@@ -5,11 +5,22 @@ import { createShopBrowser, currentShopRoute, navigateShop, parseShopAddress, re
 import { renderComputer, renderDevelopmentTerminal } from './computer-ui.js';
 import { getComputerLoginMode, configureComputerPassword, authenticateComputer, parseTerminalCommand } from './computer-session.js';
 import { icon, escape, money, pct, avatar } from './ui.js';
+import { TEST_SAVE_KEY, TEST_MODE_KEY, enableLocalTest, isLocalTestState } from './local-test.js';
 import { CANDIDATES, createGame, loadGame, saveGame, advanceDay, prospect, hireEmployee, setAllocation, setProjectMode, performAction, negotiateProject, discoverLead, interviewCandidate, assignEmployee, resolveProjectEvent, setProjectPriority, collectReceivable, investProduct, recordTravel, takeLoan, repayLoan, getOfficeOverview, getRoomEffects, ROOM_ACTIONS, getRoomActionEligibility, purchaseOfficeItem, expandOffice, upgradeRoom, customizeBanner, upgradeComputer, performRoomAction, getNegotiationChance, getWorkSession, getWorkSessionEligibility, startWorkSession, answerWorkPuzzle, completeWorkSession } from './simulation.js';
 
-const saved = loadGame();
+const testRequest = new URL(location.href).searchParams.get('teste');
+let localTestMode = testRequest === '1';
+try {
+  if (testRequest === '1') localStorage.setItem(TEST_MODE_KEY, '1');
+  else if (testRequest === '0') localStorage.removeItem(TEST_MODE_KEY);
+  else localTestMode = localStorage.getItem(TEST_MODE_KEY) === '1';
+} catch { /* The URL still activates a session if browser storage is unavailable. */ }
+const storageKey = localTestMode ? TEST_SAVE_KEY : undefined;
+const testSaved = localTestMode ? loadGame(TEST_SAVE_KEY) : null;
+const saved = localTestMode ? testSaved || loadGame() : loadGame();
 let gameStarted = Boolean(saved);
 let state = saved || createGame({ name: 'Alex', company: 'Sua empresa', age: 26, avatarColor: '#adc972', trait: 'balanced' });
+if (localTestMode) enableLocalTest(state, !testSaved);
 state.paused = true;
 let elapsed = 0;
 let scene;
@@ -49,6 +60,10 @@ const stations = {
 };
 
 document.querySelector('#app').innerHTML = `<main class="game-shell"><section id="world-stage" class="world-stage" aria-label="Escritório da sua empresa"><canvas id="office-canvas" tabindex="0"></canvas><header class="world-topbar"><a class="brand" href="#" aria-label="devhouse"><span class="brand-mark">${icon('code')}</span><span>devhouse<span class="brand-dot">.</span></span></a><div class="world-identity"><strong id="company-name"></strong><small>SEU ESCRITÓRIO · SUA HISTÓRIA</small></div><div class="world-time"><strong id="day-date"></strong><span id="day-time"></span></div><div class="time-controls"><button class="icon-button" id="pause-button" data-action="pause" aria-label="Retomar tempo">${icon('play')}</button><button class="speed-button" id="speed-button" data-action="speed" title="Alterar velocidade">1×</button><span class="hud-divider"></span><button class="icon-button" data-travel="reception" aria-label="Ir ao diário e ao guia do fundador">${icon('book')}</button><span id="save-status" class="save-status" title="Salvamento automático">${icon('check')}</span></div></header><div class="world-bottom"><div class="walk-help"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar</span><span><kbd>E</kbd> consultar</span><span><kbd>Esc</kbd> voltar</span></div><div id="context-prompt" class="context-prompt">Clique em um setor para caminhar até ele.</div><nav class="office-compass" aria-label="Caminhar até um setor">${Object.entries(stations).map(([key, s]) => `<button data-travel="${key}" title="Caminhar até ${s.short}" aria-label="Caminhar até ${s.short}">${icon(s.icon)}<span>${s.short}</span></button>`).join('')}</nav></div><div class="world-watermark">CAPÍTULO 02 · A EMPRESA ACONTECE AQUI</div><section id="station-panel" class="station-panel" hidden aria-label="Consulta no setor do escritório"></section></section></main>`;
+
+if (localTestMode) {
+  document.querySelector('#world-stage').insertAdjacentHTML('beforeend', `<aside class="local-test-toolbar" aria-label="Modo de teste local"><strong>TESTE LOCAL</strong><span>Progresso liberado · save separado</span><button data-local-test="money">+ R$ 1 milhão</button><button data-local-test="exit">Partida normal</button></aside>`);
+}
 
 function activeProjects() { return state.projects.filter((p) => p.status === 'active'); }
 function isComputerApp(app) { return currentStation === 'work' && computerUnlocked && computerApp === app; }
@@ -192,7 +207,7 @@ function toast(message, ok = true) {
 }
 function persist() {
   if (!gameStarted) return;
-  const result = saveGame(state);
+  const result = saveGame(state, storageKey);
   document.querySelector('#save-status').innerHTML = icon(result?.ok === false ? 'message' : 'check');
   document.querySelector('#save-status').title = result?.ok === false ? result.message : 'Salvo neste navegador';
 }
@@ -376,7 +391,7 @@ function stationContent(action) {
   }
   if (action === 'team') {
     const office = getOfficeOverview(state);
-    return `${tabs([['main', 'Equipe & responsabilidades'], ['candidates', 'Entrevistas & vagas']])}${stats([['POSTOS LIVRES', office.freePosts, 'Mesa e cadeira prontas antes de contratar'], ['EQUIPE', state.employees.length, 'Computadores são atribuídos ao ocupar um posto']])}${panelTab === 'candidates' ? `<p class="muted">Conhecer a pessoa custa 1h de qualidade e gestão. Sem mesa e cadeira livres não há contratação: prepare um posto na loja. A sala do RH melhora a seleção dos talentos.</p>${CANDIDATES.filter((c) => !state.employees.some((e) => e.id === c.id)).map((c) => { const interview = state.interviews?.[c.id]; return `<article class="person-card"><div class="person-top">${avatar(c.color, 52, c.name)}<div><h3>${escape(c.name)}</h3><p>${escape(c.role)}</p></div><span class="trait-pill">${money(c.salary)}/mês</span></div><p class="muted">${escape(c.trait)}</p>${interview ? `<div class="interview-note"><strong>Entrevista concluída · ${Math.round(interview.score)}/100</strong><p>${escape(interview.strength)}</p><small>${escape(interview.risk)}</small></div>` : `<button class="secondary-button full" data-interview="${escape(c.id)}">Entrevistar · 1h de gestão</button>`}<div class="hire-actions"><button class="primary-button compact" data-hire="${escape(c.id)}" data-contract="PJ" ${!interview || office.freePosts <= 0 ? 'disabled' : ''}>PJ · ${money(c.salary * 1.15)}/mês</button><button class="secondary-button compact" data-hire="${escape(c.id)}" data-contract="CLT" ${!interview || office.freePosts <= 0 ? 'disabled' : ''}>CLT · ${money(c.salary * 1.7)}/mês</button></div></article>`; }).join('') || '<div class="empty-state">Todos os talentos deste primeiro grupo já fazem parte da sua equipe.</div>'}` : `<article class="person-card"><div class="person-top">${avatar(state.profile.avatarColor, 48, state.profile.name)}<div><h3>${escape(state.profile.name)}</h3><p>Fundador · vende, entrega e decide</p></div><span class="tag">8H / DIA</span></div></article>${state.employees.map((e) => `<article class="person-card"><div class="person-top">${avatar(e.color, 48, e.name)}<div><h3>${escape(e.name)}</h3><p>${escape(e.role)} · ${e.contract}</p></div><span class="status-pill ${e.stress > 60 ? '' : 'success'}">${e.stress > 60 ? 'Sobrecarregado' : 'Em equilíbrio'}</span></div>${stats([['MORAL', `${Math.round(e.morale ?? 80)}%`], ['ESTRESSE', `${Math.round(e.stress ?? 10)}%`], ['FOLHA / DIA', money(e.salary * (e.contract === 'CLT' ? 1.7 : 1.15) / 20)]])}<div class="station-grid"><label class="select-label">Responsabilidade<select data-employee-assignment="${escape(e.id)}"><option value="auto" ${!e.assignment || e.assignment === 'auto' ? 'selected' : ''}>Ajudar na fila prioritária</option>${activeProjects().map((p) => `<option value="${escape(p.id)}" ${e.assignment === p.id ? 'selected' : ''}>${escape(p.title)}</option>`).join('')}</select></label><label class="select-label">Papel no projeto<select data-employee-role="${escape(e.id)}"><option value="delivery" ${e.assignmentRole !== 'quality' ? 'selected' : ''}>Desenvolver</option><option value="quality" ${e.assignmentRole === 'quality' ? 'selected' : ''}>Revisar & testar</option></select></label></div></article>`).join('') || '<div class="empty-state">Você ainda faz tudo. Consulte a aba de entrevistas para trazer a primeira pessoa.</div>'}<div class="concept-note">${icon('people')}<p>Distribuir pessoas entre entregas e revisão muda o resultado. Sobrecarga eleva estresse e reduz produtividade; a equipe não é apenas uma soma de horas.</p></div>`}`;
+    return `${tabs([['main', 'Equipe & responsabilidades'], ['candidates', 'Entrevistas & vagas']])}${stats([['POSTOS LIVRES', office.freePosts, 'Mesa e cadeira prontas antes de contratar'], ['EQUIPE', state.employees.length, 'Computadores são atribuídos ao ocupar um posto']])}${panelTab === 'candidates' ? `<p class="muted">Conhecer a pessoa custa 1h de qualidade e gestão. Sem mesa e cadeira livres não há contratação: prepare um posto na loja. A sala do RH melhora a seleção dos talentos.</p>${CANDIDATES.filter((c) => !state.employees.some((e) => e.id === c.id)).map((c) => { const interview = state.interviews?.[c.id]; return `<article class="person-card"><div class="person-top">${avatar(c.color, 52, c.name)}<div><h3>${escape(c.name)}</h3><p>${escape(c.role)}</p></div><span class="trait-pill">${money(c.salary)}/mês</span></div><p class="muted">${escape(c.trait)}</p>${interview ? `<div class="interview-note"><strong>Entrevista concluída · ${Math.round(interview.score)}/100</strong><p>${escape(interview.strength)}</p><small>${escape(interview.risk)}</small></div>` : `<button class="secondary-button full" data-interview="${escape(c.id)}">Entrevistar · 1h de gestão</button>`}<div class="hire-actions"><button class="primary-button compact" data-hire="${escape(c.id)}" data-contract="PJ" ${(!interview && !isLocalTestState(state)) || office.freePosts <= 0 ? 'disabled' : ''}>PJ · ${money(c.salary * 1.15)}/mês</button><button class="secondary-button compact" data-hire="${escape(c.id)}" data-contract="CLT" ${(!interview && !isLocalTestState(state)) || office.freePosts <= 0 ? 'disabled' : ''}>CLT · ${money(c.salary * 1.7)}/mês</button></div></article>`; }).join('') || '<div class="empty-state">Todos os talentos deste primeiro grupo já fazem parte da sua equipe.</div>'}` : `<article class="person-card"><div class="person-top">${avatar(state.profile.avatarColor, 48, state.profile.name)}<div><h3>${escape(state.profile.name)}</h3><p>Fundador · vende, entrega e decide</p></div><span class="tag">8H / DIA</span></div></article>${state.employees.map((e) => `<article class="person-card"><div class="person-top">${avatar(e.color, 48, e.name)}<div><h3>${escape(e.name)}</h3><p>${escape(e.role)} · ${e.contract}</p></div><span class="status-pill ${e.stress > 60 ? '' : 'success'}">${e.stress > 60 ? 'Sobrecarregado' : 'Em equilíbrio'}</span></div>${stats([['MORAL', `${Math.round(e.morale ?? 80)}%`], ['ESTRESSE', `${Math.round(e.stress ?? 10)}%`], ['FOLHA / DIA', money(e.salary * (e.contract === 'CLT' ? 1.7 : 1.15) / 20)]])}<div class="station-grid"><label class="select-label">Responsabilidade<select data-employee-assignment="${escape(e.id)}"><option value="auto" ${!e.assignment || e.assignment === 'auto' ? 'selected' : ''}>Ajudar na fila prioritária</option>${activeProjects().map((p) => `<option value="${escape(p.id)}" ${e.assignment === p.id ? 'selected' : ''}>${escape(p.title)}</option>`).join('')}</select></label><label class="select-label">Papel no projeto<select data-employee-role="${escape(e.id)}"><option value="delivery" ${e.assignmentRole !== 'quality' ? 'selected' : ''}>Desenvolver</option><option value="quality" ${e.assignmentRole === 'quality' ? 'selected' : ''}>Revisar & testar</option></select></label></div></article>`).join('') || '<div class="empty-state">Você ainda faz tudo. Consulte a aba de entrevistas para trazer a primeira pessoa.</div>'}<div class="concept-note">${icon('people')}<p>Distribuir pessoas entre entregas e revisão muda o resultado. Sobrecarga eleva estresse e reduz produtividade; a equipe não é apenas uma soma de horas.</p></div>`}`;
   }
   if (action === 'furniture') return renderOfficeStore(state, panelTab === 'main' ? 'overview' : panelTab);
   if (action === 'meeting' || action === 'ceo') return specialRoomContent(action);
@@ -450,6 +465,7 @@ function showProfile(isNew = false) {
       terminalHistory = [];
       panelWasPaused = true;
       state = createGame(profile);
+      if (localTestMode) enableLocalTest(state, true);
       gameStarted = true;
       elapsed = 0;
       scene.setState(state);
@@ -493,6 +509,21 @@ function handleAction(action) {
 document.addEventListener('click', (e) => {
   const target = e.target.closest('button');
   if (!target || target.disabled) return;
+  if (target.dataset.localTest && localTestMode) {
+    if (target.dataset.localTest === 'money') {
+      state.cash = Math.min(state.cash + 1000000, 100000000);
+      state.status = 'active';
+      render(); persist();
+      toast('R$ 1 milhão adicionado somente à sua partida de teste.');
+    } else if (target.dataset.localTest === 'exit') {
+      persist();
+      try { localStorage.removeItem(TEST_MODE_KEY); } catch { /* Query overrides storage. */ }
+      const url = new URL(location.href);
+      url.searchParams.set('teste', '0');
+      location.replace(url.href);
+    }
+    return;
+  }
   if (target.dataset.travel) return travelTo(target.dataset.travel);
   if (target.dataset.action) return handleAction(target.dataset.action);
   if (!currentStation || !scene.isNearStation(currentStation)) return;
@@ -640,4 +671,4 @@ setInterval(() => {
   const text = nearby ? `E · Consultar ${stations[nearby].short.toLowerCase()}` : 'Clique em um setor para caminhar até ele.';
   if (text !== lastPrompt) { document.querySelector('#context-prompt').textContent = text; lastPrompt = text; }
 }, 250);
-window.addEventListener('beforeunload', () => { if (gameStarted) saveGame(state); });
+window.addEventListener('beforeunload', () => { if (gameStarted) saveGame(state, storageKey); });

@@ -108,6 +108,10 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .office-compass button .icon { width: 17px; height: 17px; }
 .world-watermark { position: absolute; bottom: 98px; left: 28px; z-index: 2; pointer-events: none; font-size: 10px; letter-spacing: 1.7px; text-transform: uppercase; color: #d1e4bc; text-shadow: 0 1px 5px #283827; }
 .world-watermark span { color: #eef8dc; }
+.local-test-toolbar { position: absolute; top: 76px; right: 12px; z-index: 30; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: calc(100% - 24px); padding: 8px 10px; background: #c0c0c0; color: #111; border: 2px outset #eee; font: 12px Arial, sans-serif; }
+.local-test-toolbar strong { color: #800000; }
+.local-test-toolbar button { padding: 5px 8px; border: 2px outset #eee; background: #c0c0c0; color: #111; cursor: pointer; }
+@media (max-width: 600px) { .local-test-toolbar { top: 68px; font-size: 10px; gap: 5px; } .local-test-toolbar > span { display: none; } }
 .world-emptytip, .world-intro {
   position: absolute; z-index: 3; top: 106px; left: 50%; transform: translateX(-50%);
   border: 1px solid #f0f5d94f; border-radius: 10px; background: #e9efcbe8; color: #344d32;

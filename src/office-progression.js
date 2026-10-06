@@ -1,3 +1,4 @@
+import { isLocalTestState } from './local-test.js';
 // One catalog feeds the shop, scene, economy and save validation.
 export const OFFICE_STAGES = [
   { id: 'garage', name: 'Garagem', price: 0, slots: 6, maxPosts: 2, dailyRent: 55, requirements: {}, description: 'Uma sala compartilhada e dois postos possíveis. Aluguel de R$ 55 por dia, mais R$ 35 de internet e serviços.' },
@@ -130,6 +131,7 @@ export function getOfficeOverview(state, includeEligibility = true) {
 }
 
 function gateReason(state, requirements = {}) {
+  if (isLocalTestState(state)) return '';
   const reasons = [];
   if (requirements.stage && stageIndex(state.office.stage) < stageIndex(requirements.stage)) reasons.push(`escritório ${OFFICE_STAGES.find((stage) => stage.id === requirements.stage).name}`);
   if (requirements.delivered && state.stats.delivered < requirements.delivered) reasons.push(`${requirements.delivered} entregas`);
