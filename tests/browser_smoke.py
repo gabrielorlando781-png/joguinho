@@ -80,9 +80,9 @@ def visit(page, action, pointer=False, authenticate=True):
         }""", action)
         page.mouse.click(target['x'], target['y'])
     else:
-        compass = page.locator(f'[data-travel="{action}"]').first
-        assert compass.is_visible(), f'The compass must offer the available {action} sector.'
-        compass.click()
+        # Exercise the same routing API used by a canvas click, including sectors
+        # outside the moving camera. This never teleports or opens a station early.
+        assert page.evaluate('action => window.__testedScene.requestInteraction(action)', action)
     panel = page.locator(f'#world-stage #station-panel[data-station="{action}"]')
     if not before['near']:
         assert not panel.is_visible(), f'{action} opened before the character arrived.'
@@ -1132,6 +1132,70 @@ def verify_browser_shop(browser, url):
     context.close()
 
 
+def verify_minimal_office(browser, url):
+    fixtures = json.loads(subprocess.check_output(['node', '--input-type=module', '-e', """
+      import {createGame} from './src/simulation.js';
+      const state=createGame({name:'Marina Souza',company:'Estúdio Aurora',age:28,trait:'balanced'});
+      console.log(JSON.stringify(['garage','commercial','floor'].map(stage=>({version:3,state:{...state,office:{...state.office,stage}}}))));
+    """], cwd=ROOT, text=True))
+    for viewport in [{'width':1440,'height':1000}, {'width':1920,'height':1080},
+                     {'width':2560,'height':1080}, {'width':390,'height':844},
+                     {'width':320,'height':568}, {'width':844,'height':390}]:
+        for fixture in fixtures:
+            context, page = saved_context(browser, url, fixture, viewport)
+            assert page.locator('.office-compass, .walk-help, .world-watermark, #context-prompt').count() == 0
+            assert page.locator('.world-topbar .brand').count() == 0
+            assert page.locator('#company-name').inner_text() == 'Estúdio Aurora'
+            assert page.locator('#founder-name').inner_text() == 'Marina Souza'
+            geometry = page.evaluate("""() => {
+              const s=window.__testedScene, b=s.viewBounds;
+              const rects=[...document.querySelectorAll('.world-topbar > *')].map(el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};});
+              return {left:s.offsetX+b.x*s.scale, right:s.offsetX+(b.x+b.w)*s.scale,
+                top:s.offsetY+b.y*s.scale,bottom:s.offsetY+(b.y+b.h)*s.scale,
+                width:innerWidth,height:innerHeight,rects,overflow:document.body.scrollWidth>innerWidth};
+            }""")
+            assert geometry['left'] <= .01 and geometry['top'] <= .01
+            assert geometry['right'] >= viewport['width']-.01 and geometry['bottom'] >= viewport['height']-.01
+            assert not geometry['overflow']
+            for index, rect in enumerate(geometry['rects']):
+                assert 0 <= rect['left'] < rect['right'] <= viewport['width']
+                if index:
+                    assert geometry['rects'][index-1]['right'] <= rect['left']
+            stage=fixture['state']['office']['stage']
+            page.screenshot(path=str(ARTIFACTS/f'office-{stage}-{viewport["width"]}x{viewport["height"]}.png'), animations='disabled')
+            if stage == 'garage':
+                page.locator('[data-action="settings"]').click()
+                assert page.locator('.settings-brand').is_visible()
+                page.locator('[data-action="settings-help"]').click()
+                assert page.locator('#modal-title').inner_text() == 'Como jogar'
+                page.keyboard.press('Escape')
+                if viewport['width'] == 1920:
+                    page.locator('[data-action="settings"]').click()
+                    page.locator('[data-action="fullscreen"]').click()
+                    page.wait_for_function('Boolean(document.fullscreenElement)')
+                    page.locator('[data-action="fullscreen"]').click()
+                    page.wait_for_function('!document.fullscreenElement')
+                    page.keyboard.press('Escape')
+                visit(page,'work')
+                panel=page.locator('#station-panel')
+                rect=panel.bounding_box()
+                assert rect['y'] >= 60 and rect['y']+rect['height'] <= viewport['height']+1, rect
+                assert panel.locator('.computer-screen').bounding_box()['height'] > max(130, viewport['height']-210)
+                computer_app(page,'expansion')
+                assert panel.locator('.shop-browser').is_visible()
+                assert panel.locator('.shop-browser-viewport').bounding_box()['height'] >= 70
+                panel.locator('[data-computer-command="maximize"]').click()
+                assert panel.bounding_box()['height'] >= viewport['height'] - 18
+                assert panel.locator('.shop-browser-viewport').bounding_box()['height'] >= 70
+                panel.locator('[data-computer-command="maximize"]').click()
+                assert page.evaluate('document.body.scrollWidth <= innerWidth')
+                page.screenshot(path=str(ARTIFACTS/f'computer-{viewport["width"]}x{viewport["height"]}.png'), animations='disabled')
+                close_station(page)
+            context.close()
+    checks.append('Office fills all six desktop, ultrawide and mobile viewports across all three maps; minimal HUD has no overlap or removed navigation')
+    checks.append('Settings, help and native fullscreen work; larger computer and expansion browser stay inside every viewport')
+
+
 def main():
     with socket.socket() as free_port:
         free_port.bind(('127.0.0.1', 0))
@@ -1167,8 +1231,12 @@ def main():
             with sync_playwright() as p:
                 browser = p.chromium.launch(executable_path=shutil.which('chromium'), headless=True, args=['--no-sandbox'])
                 try:
-                    verify_browser_shop(browser, url)
-                    if os.environ.get('GAME_BROWSER_SUITE') != 'shop':
+                    suite = os.environ.get('GAME_BROWSER_SUITE')
+                    if suite != 'shop':
+                        verify_minimal_office(browser, url)
+                    if suite != 'hud':
+                        verify_browser_shop(browser, url)
+                    if suite not in ('shop', 'hud'):
                         verify_computer_login(browser, url)
                         run_journey(browser, url)
                         verify_legacy_save(browser, url)

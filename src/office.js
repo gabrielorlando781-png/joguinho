@@ -95,7 +95,8 @@ export class OfficeScene {
       this.travelAccumulator = 0;
       this.onMove({ x: this.player.x, y: this.player.y, distance: 0, station: this.nearestHotspot()?.action || null });
     }
-    this.updateCamera();
+    if (changed) this.resize();
+    else this.updateCamera();
   }
 
   buildObstacles() {
@@ -168,16 +169,18 @@ export class OfficeScene {
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.width = Math.round(this.cssWidth * this.dpr);
     this.canvas.height = Math.round(this.cssHeight * this.dpr);
-    const fit = Math.min(this.cssWidth / WIDTH, this.cssHeight / HEIGHT);
-    this.followCamera = fit < 0.58 || this.zoom > 1;
-    this.scale = this.followCamera ? Math.max(fit, this.cssWidth < 600 ? 0.72 : fit) * this.zoom : fit;
+    const floor = this.layout.floor;
+    // Frame the room itself, filling the viewport without the map's outer margins.
+    this.viewBounds = { x: floor.x, y: floor.y - 106, w: floor.w, h: floor.h + 113 };
+    this.scale = Math.max(this.cssWidth / this.viewBounds.w, this.cssHeight / this.viewBounds.h) * this.zoom;
+    this.followCamera = true;
     this.updateCamera(); this.draw();
   }
   updateCamera() {
     if (!this.scale) return;
-    const scaledW = WIDTH * this.scale, scaledH = HEIGHT * this.scale;
-    this.offsetX = scaledW <= this.cssWidth ? (this.cssWidth-scaledW)/2 : clamp(this.cssWidth/2-this.player.x*this.scale, this.cssWidth-scaledW, 0);
-    this.offsetY = scaledH <= this.cssHeight ? (this.cssHeight-scaledH)/2 : clamp(this.cssHeight*.56-this.player.y*this.scale, this.cssHeight-scaledH, 0);
+    const { x, y, w, h } = this.viewBounds;
+    this.offsetX = clamp(this.cssWidth / 2 - this.player.x * this.scale, this.cssWidth - (x + w) * this.scale, -x * this.scale);
+    this.offsetY = clamp(this.cssHeight * .55 - this.player.y * this.scale, this.cssHeight - (y + h) * this.scale, -y * this.scale);
   }
   destroy() {
     this.destroyed = true; cancelAnimationFrame(this.raf); this.reportMovement(true);
@@ -392,10 +395,6 @@ export class OfficeScene {
       this.rug(c,room.x+9,room.y+10,room.w-18,room.h-18,outer,inner);
       if(room.level!=='open')this.text(c,room.level==='partition'?'DIVISÓRIAS':room.level==='glass'?'SALA DE VIDRO':'SALA DEDICADA',room.x+room.w/2,room.y+room.h-18,7,'#e4dcc1','center',600);
     });
-    this.text(c,'C O N S T R U I R   •   C O N V E R S A R   •   C R E S C E R',floor.x+floor.w/2,this.layout.stage==='garage'?507:556,9,'#947754','center',600);
-    this.rect(c,floor.x+floor.w/2-135,this.layout.stage==='garage'?515:564,270,1,'#bd976b');
-    this.text(c,this.layout.name,floor.x+12,wallY-29,11,'#bed0ac','left',700);
-    this.text(c,this.layout.subtitle,floor.x+12,wallY-13,8,'#7f9e82');
   }
   rug(c,x,y,w,h,outer,inner){
     this.rect(c,x+2,y+3,w,h,'#a2856266');this.rect(c,x,y,w,h,outer);this.rect(c,x+6,y+6,w-12,h-12,inner);
@@ -417,7 +416,6 @@ export class OfficeScene {
   }
   drawWorldData(c) {
     const floor=this.layout.floor, office=this.state.office||{};
-    this.text(c,(this.state.profile?.company||'Seu estúdio').toUpperCase().slice(0,32),floor.x+12,floor.y-159,20,'#d9dcb6','left',700);
     if(office.amenities?.banner) {
       const text=String(office.banner?.text||this.state.profile?.company||'Seu estúdio').slice(0,38);
       const width=Math.min(310,Math.max(140,text.length*7+30)), x=floor.x+floor.w-width-13, y=floor.y-78;
@@ -772,10 +770,7 @@ export class OfficeScene {
     this.rect(c,spot.labelX-1,spot.labelY+17,2,3,active?'#e9d9ab':'#668369');
   }
   drawPlayerLabel(c,nearby){
-    const {x,y}=this.player,name=(this.state.profile?.name||'Você').split(' ')[0].slice(0,15);
-    c.font='600 11px system-ui,sans-serif';const width=c.measureText(name).width+19;
-    c.fillStyle='#183b2ce6';c.beginPath();c.roundRect(x-width/2,y-75,width,20,4);c.fill();this.text(c,name,x,y-61,11,'#eee9cb','center',600);
-    this.polygon(c,[[x-3,y-53],[x+3,y-53],[x,y-49]],'#d6d4a5');
+    const {x,y}=this.player;
     if(nearby&&!this.player.moving&&!this.interactionOpen){
       c.font='600 11px system-ui,sans-serif';const label=nearby.verb,promptW=c.measureText(label).width+46;
       c.fillStyle='#eee1bb';c.beginPath();c.roundRect(x-promptW/2,y+15,promptW,27,5);c.fill();

@@ -42,7 +42,6 @@ let pendingSummary = null;
 let toastTimer;
 let positionTimer;
 let lastModalTrigger;
-let lastPrompt = '';
 const stations = {
   work: { title: 'Meu computador', subtitle: 'Sente para desenvolver, planejar a expansão e criar produtos', icon: 'code', short: 'Meu PC' },
   sales: { title: 'Mesa comercial', subtitle: 'Converse, descubra o escopo e negocie', icon: 'message', short: 'Comercial' },
@@ -59,11 +58,7 @@ const stations = {
   exit: { title: 'Fechamento do escritório', subtitle: 'Confira a rotina antes de fechar as portas', icon: 'clock', short: 'Fechar o dia' },
 };
 
-document.querySelector('#app').innerHTML = `<main class="game-shell"><section id="world-stage" class="world-stage" aria-label="Escritório da sua empresa"><canvas id="office-canvas" tabindex="0"></canvas><header class="world-topbar"><a class="brand" href="#" aria-label="devhouse"><span class="brand-mark">${icon('code')}</span><span>devhouse<span class="brand-dot">.</span></span></a><div class="world-identity"><strong id="company-name"></strong><small>SEU ESCRITÓRIO · SUA HISTÓRIA</small></div><div class="world-time"><strong id="day-date"></strong><span id="day-time"></span></div><div class="time-controls"><button class="icon-button" id="pause-button" data-action="pause" aria-label="Retomar tempo">${icon('play')}</button><button class="speed-button" id="speed-button" data-action="speed" title="Alterar velocidade">1×</button><span class="hud-divider"></span><button class="icon-button" data-travel="reception" aria-label="Ir ao diário e ao guia do fundador">${icon('book')}</button><span id="save-status" class="save-status" title="Salvamento automático">${icon('check')}</span></div></header><div class="world-bottom"><div class="walk-help"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar</span><span><kbd>E</kbd> consultar</span><span><kbd>Esc</kbd> voltar</span></div><div id="context-prompt" class="context-prompt">Clique em um setor para caminhar até ele.</div><nav class="office-compass" aria-label="Caminhar até um setor">${Object.entries(stations).map(([key, s]) => `<button data-travel="${key}" title="Caminhar até ${s.short}" aria-label="Caminhar até ${s.short}">${icon(s.icon)}<span>${s.short}</span></button>`).join('')}</nav></div><div class="world-watermark">CAPÍTULO 02 · A EMPRESA ACONTECE AQUI</div><section id="station-panel" class="station-panel" hidden aria-label="Consulta no setor do escritório"></section></section></main>`;
-
-if (localTestMode) {
-  document.querySelector('#world-stage').insertAdjacentHTML('beforeend', `<aside class="local-test-toolbar" aria-label="Modo de teste local"><strong>TESTE LOCAL</strong><span>Progresso liberado · save separado</span><button data-local-test="money">+ R$ 1 milhão</button><button data-local-test="exit">Partida normal</button></aside>`);
-}
+document.querySelector('#app').innerHTML = `<main class="game-shell"><section id="world-stage" class="world-stage" aria-label="Escritório da sua empresa"><canvas id="office-canvas" tabindex="0"></canvas><header class="world-topbar"><div class="world-identity"><strong id="company-name"></strong><span id="founder-name"></span></div><div class="world-time-controls"><div class="world-time"><span id="day-date"></span><strong id="day-time"></strong></div><span class="hud-divider"></span><button class="icon-button" id="pause-button" data-action="pause" aria-label="Retomar tempo">${icon('play')}</button><button class="speed-button" id="speed-button" data-action="speed" title="Alterar velocidade">1×</button></div><button class="icon-button settings-button" data-action="settings" aria-label="Configurações" title="Configurações">${icon('settings')}</button></header><section id="station-panel" class="station-panel" hidden aria-label="Consulta no setor do escritório"></section></section></main>`;
 
 function activeProjects() { return state.projects.filter((p) => p.status === 'active'); }
 function isComputerApp(app) { return currentStation === 'work' && computerUnlocked && computerApp === app; }
@@ -208,28 +203,29 @@ function toast(message, ok = true) {
 function persist() {
   if (!gameStarted) return;
   const result = saveGame(state, storageKey);
-  document.querySelector('#save-status').innerHTML = icon(result?.ok === false ? 'message' : 'check');
-  document.querySelector('#save-status').title = result?.ok === false ? result.message : 'Salvo neste navegador';
+  if (result?.ok === false) toast(result.message, false);
 }
 function renderClock() {
   document.querySelector('#company-name').textContent = state.profile.company;
-  const weekdays = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
-  document.querySelector('#day-date').textContent = weekdays[(state.day - 1) % 7];
+  document.querySelector('#founder-name').textContent = state.profile.name;
+  document.querySelector('#company-name').title = state.profile.company;
+  document.querySelector('#founder-name').title = state.profile.name;
+  const weekdays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+  document.querySelector('#day-date').textContent = `Dia ${String(state.day).padStart(2, '0')} · ${weekdays[(state.day - 1) % 7]}`;
   const minute = Math.floor(Math.min(elapsed, 120) / 120 * 480);
-  document.querySelector('#day-time').textContent = `DIA ${String(state.day).padStart(2, '0')} · ${String(9 + Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')} ${currentStation ? '· EM CONSULTA' : state.paused ? '· PAUSADO' : ''}`;
-  document.querySelector('#pause-button').innerHTML = icon(state.paused ? 'play' : 'pause');
-  document.querySelector('#pause-button').setAttribute('aria-label', state.paused ? 'Retomar tempo' : 'Pausar tempo');
+  document.querySelector('#day-time').textContent = `${String(9 + Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+  const pauseButton = document.querySelector('#pause-button');
+  pauseButton.innerHTML = icon(state.paused ? 'play' : 'pause');
+  pauseButton.disabled = Boolean(currentStation) || state.status === 'bankrupt';
+  pauseButton.setAttribute('aria-label', state.paused ? 'Retomar tempo' : 'Pausar tempo');
+  pauseButton.setAttribute('aria-pressed', String(!state.paused));
+  pauseButton.title = currentStation ? 'Tempo pausado durante a consulta' : state.paused ? 'Retomar tempo' : 'Pausar tempo';
   document.querySelector('#speed-button').textContent = `${state.speed || 1}×`;
 }
 function render() {
   renderClock();
   scene?.setState(state);
   if (scene && gameStarted) state.officePosition = { x: scene.player.x, y: scene.player.y };
-  const office = getOfficeOverview(state);
-  document.querySelector('.world-watermark').textContent = `CAPÍTULO 03 · ${office.stage.name.toUpperCase()}`;
-  for (const name of ['meeting', 'ceo']) {
-    document.querySelector(`[data-travel="${name}"]`).hidden = !state.office.special[name];
-  }
   if (currentStation && !scene.isNearStation(currentStation)) {
     state.paused = true;
     panelWasPaused = true;
@@ -291,14 +287,18 @@ function travelTo(action) {
 }
 function positionPanel() {
   const panel = document.querySelector('#station-panel');
-  if (!currentStation || window.innerWidth <= 760) { panel.style.left = ''; panel.style.top = ''; return; }
+  if (!currentStation) return;
+  if (currentStation === 'work' || window.innerWidth <= 760) {
+    panel.style.left = ''; panel.style.top = ''; return;
+  }
   const anchor = scene.getScreenPoint(currentStation);
   if (!anchor) return;
-  const width = panel.getBoundingClientRect().width || Math.min(610, window.innerWidth - 48);
-  const height = Math.min(panel.offsetHeight || 560, window.innerHeight - 185);
-  const left = anchor.x > window.innerWidth / 2 ? anchor.x - width - 28 : anchor.x + 28;
-  panel.style.left = `${Math.max(24, Math.min(window.innerWidth - width - 24, left))}px`;
-  panel.style.top = `${Math.max(100, Math.min(window.innerHeight - height - 84, anchor.y - height / 2))}px`;
+  const width = panel.getBoundingClientRect().width;
+  const height = panel.offsetHeight;
+  const margin = 16, top = 78, bottom = window.innerHeight - 16;
+  const left = anchor.x > window.innerWidth / 2 ? anchor.x - width - 24 : anchor.x + 24;
+  panel.style.left = `${Math.max(margin, Math.min(window.innerWidth - width - margin, left))}px`;
+  panel.style.top = `${Math.max(top, Math.min(bottom - height, anchor.y - height / 2))}px`;
 }
 function stats(items) {
   return `<div class="stat-grid">${items.map(([label, value, detail]) => `<div class="station-stat"><small>${label}</small><strong>${value}</strong>${detail ? `<span>${detail}</span>` : ''}</div>`).join('')}</div>`;
@@ -447,7 +447,7 @@ function showProfile(isNew = false) {
   if (isNew) state.paused = true;
   const p = state.profile;
   const colors = ['#adc972', '#84b9a9', '#b5a0d3', '#dc9573', '#dcba66'];
-  openModal(`<div class="profile-layout"><div class="profile-intro"><a class="brand"><span class="brand-mark">${icon('code')}</span><span>devhouse<span class="brand-dot">.</span></span></a><span class="welcome-tag">CAPÍTULO 01 · A PRIMEIRA IDEIA</span><h2 id="modal-title">Toda grande<br/>empresa começa<br/>com <em>alguém.</em></h2><p>Você deixou a CLT. Tem um notebook,<br/>R$ 20 mil e uma ideia na cabeça.<br/>O próximo passo é seu.</p><div class="founder-preview"><div class="portrait-grid"></div><div id="profile-avatar">${avatar(p.avatarColor, 180, p.name)}</div><span class="portrait-label">${icon('plant')} FUTURO FUNDADOR</span></div><div class="intro-bottom"><span class="online-dot"></span> Construa algo que é seu.</div></div><form id="profile-form" class="profile-form"><div class="section-label">${isNew ? 'ANTES DE ABRIR AS PORTAS' : 'SUA IDENTIDADE'}</div><h3>${isNew ? 'Vamos conhecer o fundador.' : 'Do seu jeito.'}</h3><p class="muted">Dê um nome à sua próxima grande história.</p><label>Seu nome<input name="name" required maxlength="32" placeholder="Como podemos te chamar?" autocomplete="given-name" value="${isNew ? '' : escape(p.name)}" /></label><label>Nome da empresa<input name="company" required maxlength="40" placeholder="A próxima grande software house" autocomplete="organization" value="${isNew ? '' : escape(p.company)}" /></label><div class="profile-fields"><label>Sua idade<input name="age" type="number" min="18" max="80" required value="${p.age}" /></label><label>Seu ponto forte<select name="trait"><option value="balanced" ${p.trait === 'balanced' ? 'selected' : ''}>Um pouco de tudo</option><option value="technical" ${p.trait === 'technical' ? 'selected' : ''}>Dev de coração</option><option value="commercial" ${p.trait === 'commercial' ? 'selected' : ''}>Bom de conversa</option></select></label></div><fieldset class="color-fieldset"><legend>A cor do seu personagem</legend><div class="color-choices">${colors.map((c, i) => `<label class="color-choice" style="--swatch:${c}"><input type="radio" name="avatarColor" value="${c}" ${c === p.avatarColor || (!colors.includes(p.avatarColor) && i === 0) ? 'checked' : ''} aria-label="${['Verde', 'Azul', 'Lilás', 'Terracota', 'Mostarda'][i]}"/><span>${icon('check')}</span></label>`).join('')}<small>Um toque de personalidade.</small></div></fieldset><button type="submit" class="primary-button full">${isNew ? 'Abrir as portas' : 'Salvar meu perfil'} ${icon('arrow')}</button><p class="form-footnote">${icon('save')} Seu progresso fica salvo neste navegador.</p></form></div>`, true, !isNew);
+  openModal(`<div class="profile-layout"><div class="profile-intro"><h2 id="modal-title">${isNew ? 'Criar empresa' : 'Fundador e empresa'}</h2><div class="founder-preview"><div class="portrait-grid"></div><div id="profile-avatar">${avatar(p.avatarColor, 180, p.name)}</div></div></div><form id="profile-form" class="profile-form"><div class="section-label">${isNew ? 'ANTES DE ABRIR AS PORTAS' : 'SUA IDENTIDADE'}</div><label>Seu nome<input name="name" required maxlength="32" placeholder="Seu nome" autocomplete="given-name" value="${isNew ? '' : escape(p.name)}" /></label><label>Nome da empresa<input name="company" required maxlength="40" placeholder="Nome da empresa" autocomplete="organization" value="${isNew ? '' : escape(p.company)}" /></label><div class="profile-fields"><label>Sua idade<input name="age" type="number" min="18" max="80" required value="${p.age}" /></label><label>Seu ponto forte<select name="trait"><option value="balanced" ${p.trait === 'balanced' ? 'selected' : ''}>Um pouco de tudo</option><option value="technical" ${p.trait === 'technical' ? 'selected' : ''}>Dev de coração</option><option value="commercial" ${p.trait === 'commercial' ? 'selected' : ''}>Bom de conversa</option></select></label></div><fieldset class="color-fieldset"><legend>A cor do seu personagem</legend><div class="color-choices">${colors.map((c, i) => `<label class="color-choice" style="--swatch:${c}"><input type="radio" name="avatarColor" value="${c}" ${c === p.avatarColor || (!colors.includes(p.avatarColor) && i === 0) ? 'checked' : ''} aria-label="${['Verde', 'Azul', 'Lilás', 'Terracota', 'Mostarda'][i]}"/><span>${icon('check')}</span></label>`).join('')}</div></fieldset><button type="submit" class="primary-button full">${isNew ? 'Abrir as portas' : 'Salvar meu perfil'} ${icon('arrow')}</button><p class="form-footnote">${icon('save')} Seu progresso fica salvo neste navegador.</p></form></div>`, true, !isNew);
   document.querySelector('#profile-form').addEventListener('change', (e) => { if (e.target.name === 'avatarColor') document.querySelector('#profile-avatar').innerHTML = avatar(e.target.value, 180); });
   document.querySelector('#profile-form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -483,7 +483,27 @@ function showProfile(isNew = false) {
 function showNewGameConfirm() {
   openModal(`<div class="section-label">UM NOVO COMEÇO</div><h2 id="modal-title">Abrir uma nova empresa?</h2><p class="muted">A história atual será substituída neste navegador. Caixa, projetos, equipe e mobília serão reiniciados.</p><div class="confirm-actions"><button class="secondary-button" data-action="close-modal">Continuar minha história</button><button class="primary-button" data-action="confirm-new">Começar do zero ${icon('arrow')}</button></div>`);
 }
+function showSettings() {
+  openModal(`<div class="settings-content"><div class="settings-brand brand"><span class="brand-mark">${icon('code')}</span><span>devhouse<span class="brand-dot">.</span></span></div><h2 id="modal-title">Configurações</h2><div class="settings-actions"><button data-action="fullscreen">${icon('fullscreen')}<span>${document.fullscreenElement ? 'Sair da tela cheia' : 'Tela cheia'}</span></button><button data-action="settings-profile">${icon('people')}<span>Fundador e empresa</span></button><button data-action="settings-help">${icon('book')}<span>Como jogar</span></button><button data-action="settings-new">${icon('plus')}<span>Novo jogo</span></button></div>${localTestMode ? '<section class="settings-test"><strong>Teste local</strong><p>Partida separada, com requisitos de progresso liberados. Amplie o espaço para instalar mais itens.</p><div class="settings-actions"><button data-local-test="money">+ R$ 1 milhão</button><button data-local-test="exit">Voltar à partida normal</button></div></section>' : ''}</div>`);
+}
+function showControls() {
+  openModal(`<h2 id="modal-title">Como jogar</h2><div class="settings-help"><p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ou setas para andar.</p><p>Clique ou toque no chão para caminhar. Clique em uma mesa ou no nome de um setor para ir até ele.</p><p><kbd>E</kbd> consulta o setor próximo. <kbd>Esc</kbd> fecha uma consulta.</p><p>Use o computador para desenvolver, comprar expansões e construir seu produto. Comercial, projetos, finanças e RH ficam nas mesas do escritório.</p><p>O botão de tempo retoma ou pausa o expediente. As velocidades são 1×, 2× e 4×.</p></div><button class="secondary-button full" data-action="settings">Voltar às configurações</button>`);
+}
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+    else return toast('Este navegador não oferece tela cheia. O escritório já ocupa toda a área disponível.', false);
+    showSettings();
+    document.querySelector('[data-action="fullscreen"]')?.focus();
+  } catch { toast('Não foi possível abrir a tela cheia neste navegador.', false); }
+}
 function handleAction(action) {
+  if (action === 'settings') return showSettings();
+  if (action === 'settings-help') return showControls();
+  if (action === 'settings-profile') return showProfile();
+  if (action === 'settings-new') return showNewGameConfirm();
+  if (action === 'fullscreen') return toggleFullscreen();
   if (action === 'close-station') return closeStation();
   if (action === 'close-modal') return closeModal();
   if (action === 'confirm-new') return showProfile(true);
@@ -644,7 +664,6 @@ document.addEventListener('keydown', (e) => {
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
 });
-document.querySelector('.brand').addEventListener('click', (e) => { e.preventDefault(); if (gameStarted) travelTo('reception'); });
 window.addEventListener('resize', () => { scene?.resize(); positionPanel(); });
 scene = new OfficeScene(document.querySelector('#office-canvas'), {
   onInteract: openStation,
@@ -658,17 +677,10 @@ scene = new OfficeScene(document.querySelector('#office-canvas'), {
 });
 render();
 if (!saved) showProfile(true);
-else toast('Bem-vindo de volta. Seu PC agora tem senha, área de trabalho clássica e um terminal para desenvolver.');
 setInterval(() => {
   if (state.paused || currentStation || document.querySelector('.modal-overlay') || state.status === 'bankrupt') return;
   elapsed += state.speed || 1;
   if (elapsed >= 120) finishDay(true);
   else renderClock();
 }, 1000);
-setInterval(() => {
-  if (!scene || currentStation || document.querySelector('.modal-overlay')) return;
-  const nearby = Object.keys(stations).find((action) => scene.isNearStation(action));
-  const text = nearby ? `E · Consultar ${stations[nearby].short.toLowerCase()}` : 'Clique em um setor para caminhar até ele.';
-  if (text !== lastPrompt) { document.querySelector('#context-prompt').textContent = text; lastPrompt = text; }
-}, 250);
 window.addEventListener('beforeunload', () => { if (gameStarted) saveGame(state, storageKey); });

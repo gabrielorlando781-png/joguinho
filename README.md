@@ -13,7 +13,7 @@ A versão pronta fica em `docs/index.html`, com código, estilos e imagens embut
 ## Jogar
 
 1. Escolha nome, empresa, idade, ponto forte e cor do personagem.
-2. Ande com **WASD**, **setas** ou um **clique/toque no chão**. Pressione **E** perto do setor para consultar. Clicar no nome de um setor ou no atalho inferior faz o personagem caminhar até ele e abrir a consulta ao chegar.
+2. Ande com **WASD**, **setas** ou um **clique/toque no chão**. Pressione **E** perto do setor para consultar. Clicar em uma mesa ou no nome de um setor faz o personagem caminhar até ele e abrir a consulta ao chegar.
 3. Vá ao **Comercial**. Investigue o escopo e escolha entre proposta competitiva, equilibrada e premium. A interface mostra a chance de fechar: discovery, reputação, salas e apresentações ajudam. Há uma tentativa por contato; uma recusa não permite repetir a proposta.
 4. Vá ao **Meu PC**: o fundador se senta diante do computador. Na primeira visita, crie a senha do PC do jogo; nas seguintes, entre com ela. Abra **Desenvolver** e digite `rotina` para distribuir oito horas, `foco` para escolher o projeto e `trabalhar` para iniciar cinco puzzles de escritório. Discovery, entrevistas, deslocamento e protótipos disputam esse orçamento.
 5. Consulte o **Quadro de projetos** para acompanhar entregas, escolher o ritmo e resolver pedidos extras, bloqueios ou bugs. Na **Loja**, compre uma mesa e uma cadeira para abrir uma vaga. No **RH**, entreviste antes de contratar e distribua pessoas entre desenvolvimento e revisão.
@@ -22,7 +22,7 @@ A versão pronta fica em `docs/index.html`, com código, estilos e imagens embut
 8. Confira pagamentos e cobranças no **Financeiro**. Consulte o **Diário** para ver reputação, histórico, objetivos, guia e identidade do fundador.
 9. Depois de duas entregas, abra **Meu PC → Laboratório**: construa um MVP, valide com usuários e lance uma receita recorrente.
 
-**Esc** fecha uma consulta. O escritório permanece visível durante as consultas. O computador tem área de trabalho, aplicativos, janelas e barra de tarefas; sair dele levanta o personagem. O personagem encontra caminhos em volta dos móveis. No celular, a câmera acompanha o personagem e os atalhos permitem caminhar até setores fora da tela.
+**Esc** fecha uma consulta. O escritório permanece visível durante as consultas. O computador tem área de trabalho, aplicativos, janelas e barra de tarefas; sair dele levanta o personagem. O personagem encontra caminhos em volta dos móveis. A câmera acompanha o personagem e preenche a tela com a área útil do escritório. As configurações ficam na engrenagem do canto superior direito; ali estão a tela cheia, o perfil e os controles do jogo.
 
 ## Seu computador e as sessões de trabalho
 
