@@ -32,7 +32,7 @@ Na primeira visita, defina e confirme uma senha de **4 a 24 caracteres** para es
 
 Depois de entrar, abra um dos três aplicativos:
 
-- **Expansão:** loja, ampliação, postos de trabalho, computadores, salas e identidade da empresa.
+- **Internet:** navegador clássico que abre a loja **Espaço & Cia.**, com expansões, postos, computadores, salas e identidade da empresa.
 - **Desenvolver:** terminal interativo, rotina de oito horas, foco, revisão e sessões de trabalho.
 - **Laboratório:** protótipo, pesquisa e lançamento do MVP.
 
@@ -57,6 +57,25 @@ Trabalhar exige **cinco puzzles rápidos**, com situações relacionadas ao proj
 Responder não produz trabalho imediatamente. Ao concluir os cinco puzzles, use **Concluir e aplicar o trabalho** para usar as horas disponíveis e aplicar a produção uma única vez. O bloco manual total continua limitado a **2h por dia** e faz parte das oito horas da rotina. Se você mudar a alocação, precisa restaurar as horas anunciadas para concluir a sessão.
 
 Uma sessão incompleta é salva e pode ser retomada no mesmo dia, mesmo depois de sair do PC ou recarregar a página. Fechar o dia encerra uma sessão incompleta sem aplicar produção extra.
+
+## A loja no navegador do PC
+
+Entre em **Meu PC → Internet**. A Espaço & Cia. abre como um site dentro do computador: barra de endereço, voltar, avançar, atualizar, favoritos e uma vitrine com imagens, preços e disponibilidade. O PC mantém a área de trabalho cinza, os ícones e as janelas clássicas.
+
+| Departamento | O que encontrar |
+| --- | --- |
+| Expansões de área | Garagem, sala comercial e andar inteiro, com capacidade e aluguel |
+| Salas e divisórias | Divisórias, salas dedicadas, vidro e salas especiais, separadas por classe e setor |
+| Mesas e cadeiras | Novos postos e cadeiras destinadas a uma mesa específica |
+| Computadores | Três níveis de equipamento para cada posto existente |
+| Conforto e rotina | Descanso, cafeteira e quadro de ideias |
+| Piso e identidade | Piso, decoração e banner personalizável |
+
+Busque pelo nome ou efeito do produto. O catálogo permite ordenar por preço ou nome, mostrar apenas itens disponíveis e filtrar as classes de salas. No celular, deslize a faixa de departamentos e use **Filtrar e ordenar**; a página rola dentro da tela do PC.
+
+Clique em um produto para consultar imagem, preço, espaço, aluguel e manutenção. Os bloqueios mostram o requisito que falta; as ofertas seguem as mesmas regras de progresso e caixa do escritório. **Comprar e instalar** aplica a compra e abre um comprovante com total pago, saldo, espaço ocupado e próxima manutenção. Atualizar o comprovante não cobra novamente.
+
+O favorito **Meu escritório** mostra o endereço, capacidade, postos livres e custos contínuos. A barra de endereço navega pelas páginas da loja simulada; o site faz parte do jogo e também funciona offline. A loja física do escritório continua disponível.
 
 ## Decisões e consequências
 
@@ -156,6 +175,8 @@ npm run build
 npm run test:browser
 ```
 
+Para verificar apenas o navegador e as compras da loja: `GAME_BROWSER_SUITE=shop npm run test:browser`.
+
 A suíte Node cobre 88 cenários de negócio, orçamento de horas, puzzles, senha do PC, comandos do terminal, imprevistos, crédito, produto, progressão do escritório, efeitos das salas, manutenção e migração dos saves. O teste de navegador usa Python Playwright e Chromium, disponíveis nesta imagem de nuvem. Ele inicia seu próprio servidor Vite em uma porta livre, usa contextos isolados e percorre os setores com o personagem, verificando contratos, equipe, entregas, recebimentos, compras, ampliações, salas, ações especiais, senha e recuperação do PC, comandos digitados, janelas, salvamento, migração e layout móvel. Encerra apenas o servidor que iniciou. `GAME_TEST_ARTIFACTS` permite escolher a pasta das capturas.
 
 ## Estrutura
@@ -170,6 +191,7 @@ A suíte Node cobre 88 cenários de negócio, orçamento de horas, puzzles, senh
 | `src/store-ui.js` | Loja contextual com custos, vagas, salas e identidade |
 | `src/computer-ui.js` | Área de trabalho, aplicativos e interface dos puzzles |
 | `src/computer-session.js` | Senha do PC e interpretação dos comandos do terminal |
+| `src/shop-browser.js` | Navegador, histórico, catálogo visual, detalhes e comprovantes da loja |
 | `src/work-puzzles.js` | Situações de escritório, respostas e validação das sessões |
 | `src/simulation.js` | Regras econômicas, projetos, ações e salvamento versionado |
 | `src/style.css` | Aparência, consultas, diálogos e layout responsivo |

@@ -784,7 +784,9 @@ def run_journey(browser, url):
     expansion = computer_app(page, 'expansion')
     assert expansion.locator('.office-store').is_visible()
     before = company(page)['cash']
-    expansion.locator('[data-office-buy="coffee-machine"]').click()
+    expansion.locator('[data-shop-product="item:coffee-machine"]').first.click()
+    expansion.locator('[data-shop-buy="item:coffee-machine"]').click()
+    assert expansion.locator('[data-shop-page-active="receipt"]').is_visible()
     assert company(page)['cash'] == before - 900
     assert company(page)['office']['stage'] == 'garage'
     laboratory = computer_app(page, 'laboratory')
@@ -1003,6 +1005,133 @@ def run_mobile(browser, url, advanced_fixture=None):
         context.close()
 
 
+def verify_browser_shop(browser, url):
+    context = browser.new_context(viewport={'width':1440,'height':1000}, reduced_motion='reduce')
+    page = context.new_page()
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.goto(url, wait_until='networkidle')
+    create_founder(page, 'Bia', 'Ateliê Digital')
+    visit(page, 'work')
+    panel = computer_app(page, 'expansion')
+    untouched = company(page)
+    assert panel.locator('#shop-address').input_value().endswith('/catalogo')
+    assert panel.locator('.shop-card').count() > 20
+    assert panel.locator('.shop-product-art').count() > 20
+    panel.locator('[data-shop-category="areas"]').first.click()
+    assert panel.locator('.shop-card').count() == 3
+    panel.locator('[data-shop-product="area:commercial"]').first.click()
+    assert panel.locator('[data-shop-buy="area:commercial"]').is_disabled()
+    assert 'Requer' in panel.locator('.shop-detail-eligibility').inner_text()
+    panel.locator('[data-shop-nav="back"]').click()
+    assert panel.locator('.shop-card').count() == 3
+    panel.locator('[data-shop-nav="forward"]').click()
+    assert panel.locator('[data-shop-detail="area:commercial"]').is_visible()
+    panel.locator('[data-shop-nav="reload"]').click()
+    assert panel.locator('[data-shop-buy="area:commercial"]').is_disabled()
+    address = panel.locator('#shop-address')
+    address.fill('https://www.espacoecia.game/catalogo/salas')
+    address.press('Enter')
+    panel.locator('#shop-filter-form [name="roomClass"]').select_option('Sala de vidro')
+    panel.locator('#shop-filter-form [type="submit"]').click()
+    assert panel.locator('.shop-card').count() == 4
+    assert all('Sala de vidro' in name for name in panel.locator('.shop-card-label strong').all_text_contents())
+    address.fill('https://example.invalid/catalogo')
+    address.press('Enter')
+    assert panel.locator('[data-shop-page-active="error"]').is_visible()
+    panel.locator('.shop-empty [data-shop-page="home"]').click()
+    query = panel.locator('#shop-search-form [name="query"]')
+    query.fill('cafeteira')
+    query.press('Enter')
+    assert panel.locator('.shop-card').count() == 1
+    for key in ['cash','projects','office','manualDeliveryHours','manualQualityHours','manualSalesHours']:
+        assert company(page)[key] == untouched[key], f'Browser navigation must not change {key}.'
+    page.screenshot(path=str(ARTIFACTS/'devhouse-browser-search.png'), full_page=True, animations='disabled')
+    checks.append('In-PC browser address, back, forward, refresh, search and class filters navigate without spending company resources')
+    panel.locator('[data-shop-category="all"]').first.click()
+    page.screenshot(path=str(ARTIFACTS/'devhouse-browser-catalog.png'), full_page=True, animations='disabled')
+    panel.locator('[data-shop-product="item:desk"]').first.click()
+    panel.locator('[data-shop-buy="item:desk"]').click()
+    assert company(page)['cash'] == untouched['cash'] - 650
+    assert len(company(page)['office']['workstations']) == 2
+    assert panel.locator('[data-shop-page-active="receipt"]').is_visible()
+    page.screenshot(path=str(ARTIFACTS/'devhouse-browser-receipt.png'), full_page=True, animations='disabled')
+    after = company(page)
+    panel.locator('[data-shop-nav="reload"]').click()
+    assert company(page)['cash'] == after['cash'], 'Refreshing a receipt must not charge the purchase again.'
+    panel.locator('[data-shop-category="desks"]').first.click()
+    panel.locator('[data-shop-product="chair:post-2"]').first.click()
+    panel.locator('[data-shop-buy="chair:post-2"]').click()
+    assert company(page)['office']['workstations'][1]['chair'] is True
+    assert company(page)['cash'] == untouched['cash'] - 930
+    for _ in range(3):
+        panel.locator('[data-shop-nav="back"]').click()
+    assert 'Mesa com computador' in panel.locator('.shop-receipt > p').first.inner_text(), 'Back must restore the original order, rather than the latest receipt.'
+    assert '19.350' in panel.locator('.shop-receipt dl').inner_text(), 'A historical receipt preserves the balance after its own purchase.'
+    for _ in range(3):
+        panel.locator('[data-shop-nav="forward"]').click()
+    assert 'Cadeira' in panel.locator('.shop-receipt > p').first.inner_text()
+    assert company(page)['cash'] == untouched['cash'] - 930
+    checks.append('Store product details, installed desk and selected chair generate a receipt and debit the advertised price exactly once')
+    saved = company(page)
+    close_station(page)
+    page.reload(wait_until='networkidle')
+    instrument_scene(page)
+    assert company(page)['office'] == saved['office']
+    assert company(page)['cash'] == saved['cash']
+    context.close()
+
+    context, page = saved_context(browser, url, v2_progression_fixture())
+    visit(page, 'work')
+    panel = computer_app(page, 'expansion')
+    before = company(page)
+    panel.locator('[data-shop-category="rooms"]').first.click()
+    panel.locator('[data-shop-product="room:development:partition"]').first.click()
+    assert not panel.locator('[data-shop-buy="room:development:partition"]').is_disabled()
+    panel.locator('[data-shop-buy="room:development:partition"]').click()
+    assert company(page)['office']['rooms']['development'] == 'partition'
+    assert company(page)['cash'] == before['cash'] - 650
+    panel.locator('[data-shop-category="areas"]').first.click()
+    panel.locator('[data-shop-product="area:floor"]').first.click()
+    page.screenshot(path=str(ARTIFACTS/'devhouse-browser-area.png'), full_page=True, animations='disabled')
+    before = company(page)
+    panel.locator('[data-shop-buy="area:floor"]').click()
+    assert company(page)['office']['stage'] == 'floor'
+    assert company(page)['cash'] == before['cash'] - 16000
+    if not panel.is_visible():
+        visit(page, 'work')
+        panel = computer_app(page, 'expansion')
+    panel.locator('[data-shop-category="hardware"]').first.click()
+    panel.locator('[data-shop-product="pc:post-1:3"]').first.click()
+    before = company(page)['cash']
+    panel.locator('[data-shop-buy="pc:post-1:3"]').click()
+    assert company(page)['office']['workstations'][0]['computerLevel'] == 3
+    assert company(page)['cash'] == before - 3600
+    checks.append('Eligible room classes, area expansion and workstation-specific hardware purchases use the actual office progression and save it')
+    context.close()
+
+    context, page = saved_context(browser, url, v2_progression_fixture(), {'width':390,'height':844})
+    visit(page, 'work')
+    panel = computer_app(page, 'expansion')
+    for category in ['all','areas','rooms','desks','hardware','comfort','identity']:
+        panel.locator(f'[data-shop-category="{category}"]').first.click()
+        assert panel.locator('.shop-card').count()
+        assert page.evaluate('document.body.scrollWidth <= innerWidth')
+        assert panel.locator('.shop-browser-viewport').evaluate('el => el.scrollWidth <= el.clientWidth + 1')
+    panel.locator('[data-shop-category="rooms"]').first.click()
+    panel.locator('[data-shop-toggle-filters]').click()
+    panel.locator('#shop-filter-form [name="roomClass"]').select_option('Divisórias')
+    panel.locator('#shop-filter-form [type="submit"]').click()
+    assert panel.locator('.shop-card').count() == 4
+    panel.locator('[data-shop-product="room:development:partition"]').first.click()
+    before = company(page)['cash']
+    panel.locator('[data-shop-buy="room:development:partition"]').click()
+    assert company(page)['cash'] == before - 650
+    panel.locator('[data-shop-category="rooms"]').first.click()
+    page.screenshot(path=str(ARTIFACTS/'devhouse-browser-mobile.png'), full_page=True, animations='disabled')
+    checks.append('Mobile in-PC store scrolls every category, opens details and installs an eligible room without horizontal overflow')
+    context.close()
+
+
 def main():
     with socket.socket() as free_port:
         free_port.bind(('127.0.0.1', 0))
@@ -1038,12 +1167,14 @@ def main():
             with sync_playwright() as p:
                 browser = p.chromium.launch(executable_path=shutil.which('chromium'), headless=True, args=['--no-sandbox'])
                 try:
-                    verify_computer_login(browser, url)
-                    run_journey(browser, url)
-                    verify_legacy_save(browser, url)
-                    advanced_fixture = verify_v2_office_progression(browser, url)
-                    verify_store_budget(browser, url)
-                    run_mobile(browser, url, advanced_fixture)
+                    verify_browser_shop(browser, url)
+                    if os.environ.get('GAME_BROWSER_SUITE') != 'shop':
+                        verify_computer_login(browser, url)
+                        run_journey(browser, url)
+                        verify_legacy_save(browser, url)
+                        advanced_fixture = verify_v2_office_progression(browser, url)
+                        verify_store_budget(browser, url)
+                        run_mobile(browser, url, advanced_fixture)
                     assert not errors, f'Browser errors: {errors}'
                 except Exception:
                     for index, context in enumerate(browser.contexts):

@@ -1,6 +1,7 @@
 import './style.css';
 import { OfficeScene } from './office.js';
 import { renderOfficeStore } from './store-ui.js';
+import { createShopBrowser, currentShopRoute, navigateShop, parseShopAddress, renderShopBrowser, getShopCatalog } from './shop-browser.js';
 import { renderComputer, renderDevelopmentTerminal } from './computer-ui.js';
 import { getComputerLoginMode, configureComputerPassword, authenticateComputer, parseTerminalCommand } from './computer-session.js';
 import { icon, escape, money, pct, avatar } from './ui.js';
@@ -16,7 +17,7 @@ let currentStation = null;
 let panelWasPaused = true;
 let panelTab = 'main';
 let computerApp = 'desktop';
-let computerStoreTab = 'overview';
+let shopBrowser = createShopBrowser();
 let computerUnlocked = false;
 let computerLoginMode = null;
 let computerLoginError = '';
@@ -56,7 +57,29 @@ function focusWorkPuzzle() {
   document.querySelector('#terminal-command, #station-panel [data-puzzle-answer], #station-panel [data-action="complete-work-session"]')?.focus({ preventScroll: true });
 }
 function panelScroller(panel = document.querySelector('#station-panel')) {
-  return panel.querySelector('.terminal-output-area') || panel.querySelector('.computer-window-content') || panel.querySelector('.station-body');
+  return panel.querySelector('.shop-browser-viewport') || panel.querySelector('.terminal-output-area') || panel.querySelector('.computer-window-content') || panel.querySelector('.station-body');
+}
+function browseShop(route) {
+  if (!isComputerApp('expansion') || !scene.isNearStation('work')) return;
+  navigateShop(shopBrowser, route);
+  renderStation();
+  panelScroller().scrollTop = 0;
+  document.querySelector('.shop-page-content')?.focus({ preventScroll: true });
+}
+function buyShopProduct(id) {
+  if (!isComputerApp('expansion') || !scene.isNearStation('work')) return;
+  const product = getShopCatalog(state).find((entry) => entry.id === id);
+  if (!product?.eligibility.ok) return toast(product?.eligibility.reason || 'Este produto não está disponível.', false);
+  const before = state.cash;
+  const result = product.kind === 'area' ? run(expandOffice)
+    : product.kind === 'room' ? run(upgradeRoom, product.target)
+      : product.kind === 'computer' ? run(upgradeComputer, product.target)
+        : run(purchaseOfficeItem, product.target, { workstationId: product.workstation });
+  if (!result?.ok) return;
+  const office = getOfficeOverview(state);
+  shopBrowser.receipt = { name: product.name, price: before - state.cash, category: product.category, message: result.message,
+    cash: state.cash, usedSlots: office.usedSlots, maxSlots: office.maxSlots, maintenance: office.monthlyMaintenance, nextMaintenanceDay: office.nextMaintenanceDay };
+  if (isComputerApp('expansion')) browseShop({ page: 'receipt', receipt: shopBrowser.receipt });
 }
 function lockComputer() {
   computerSessionId++;
@@ -219,7 +242,7 @@ function openStation(action) {
   if (currentStation !== action) {
     panelWasPaused = state.paused;
     panelTab = 'main';
-    if (action === 'work') { lockComputer(); computerStoreTab = 'overview'; terminalView = 'work'; }
+    if (action === 'work') { lockComputer(); terminalView = 'work'; }
   }
   currentStation = action;
   state.paused = true;
@@ -331,7 +354,7 @@ function developmentContent() {
 }
 function stationContent(action) {
   if (action === 'work') {
-    const content = !computerUnlocked ? '' : computerApp === 'expansion' ? renderOfficeStore(state, computerStoreTab)
+    const content = !computerUnlocked ? '' : computerApp === 'expansion' ? renderShopBrowser(state, shopBrowser)
       : computerApp === 'development' ? developmentContent()
         : computerApp === 'laboratory' ? stationContent('product') : '';
     const minute = Math.floor(Math.min(elapsed, 120) / 120 * 480);
@@ -422,7 +445,7 @@ function showProfile(isNew = false) {
       scene.setPlayerSeated?.(false);
       scene.setInteractionOpen(false);
       lockComputer();
-      computerStoreTab = 'overview';
+      shopBrowser = createShopBrowser();
       terminalView = 'work';
       terminalHistory = [];
       panelWasPaused = true;
@@ -489,6 +512,21 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (currentStation === 'work' && !computerUnlocked) return;
+  if (isComputerApp('expansion')) {
+    if (target.dataset.shopToggleFilters) return browseShop({ ...currentShopRoute(shopBrowser), filtersOpen: !currentShopRoute(shopBrowser).filtersOpen });
+    if (target.dataset.shopProduct) return browseShop({ page: 'product', product: target.dataset.shopProduct });
+    if (target.dataset.shopCategory) return browseShop({ page: 'catalog', category: target.dataset.shopCategory });
+    if (target.dataset.shopPage) return browseShop({ page: target.dataset.shopPage });
+    if (target.dataset.shopBuy) return buyShopProduct(target.dataset.shopBuy);
+    if (target.dataset.shopNav) {
+      if (target.dataset.shopNav === 'back' && shopBrowser.index > 0) shopBrowser.index--;
+      else if (target.dataset.shopNav === 'forward' && shopBrowser.index < shopBrowser.history.length - 1) shopBrowser.index++;
+      renderStation();
+      panelScroller().scrollTop = 0;
+      document.querySelector(`#station-panel [data-shop-nav="${target.dataset.shopNav}"]`)?.focus({ preventScroll: true });
+      return;
+    }
+  }
   if (target.dataset.terminalCommand && isComputerApp('development')) return executeTerminalCommand(target.dataset.terminalCommand);
   if (target.dataset.computerApp && currentStation === 'work' && ['desktop', 'expansion', 'development', 'laboratory'].includes(target.dataset.computerApp)) {
     if (target.dataset.computerApp === 'development' && computerApp !== 'development') { panelTab = 'main'; terminalView = 'work'; }
@@ -506,7 +544,6 @@ document.addEventListener('click', (e) => {
   }
   if (target.dataset.stationTab) return selectPanelTab(target.dataset.stationTab, 'data-station-tab');
   if (target.dataset.storeTab && isStoreOpen()) {
-    if (currentStation === 'work') computerStoreTab = target.dataset.storeTab;
     return selectPanelTab(target.dataset.storeTab, 'data-store-tab');
   }
   if (target.hasAttribute('data-office-expand') && isStoreOpen()) return run(expandOffice);
@@ -527,6 +564,15 @@ document.addEventListener('click', (e) => {
   else if (target.dataset.product && (currentStation === 'product' || currentStation === 'work' && computerApp === 'laboratory')) run(investProduct, target.dataset.product);
 });
 document.addEventListener('submit', (e) => {
+  if (['shop-address-form', 'shop-search-form', 'shop-filter-form'].includes(e.target.id)) {
+    e.preventDefault();
+    if (!isComputerApp('expansion') || !scene.isNearStation('work')) return;
+    const values = new FormData(e.target);
+    if (e.target.id === 'shop-address-form') browseShop(parseShopAddress(values.get('address')));
+    else if (e.target.id === 'shop-search-form') browseShop({ page: 'catalog', category: 'all', query: String(values.get('query') || '').trim().slice(0, 64) });
+    else browseShop({ ...currentShopRoute(shopBrowser), sort: values.get('sort'), roomClass: values.get('roomClass') || '', available: values.has('available') });
+    return;
+  }
   if (e.target.id === 'computer-login-form') { e.preventDefault(); void submitComputerLogin(e.target); return; }
   if (e.target.id === 'terminal-command-form') {
     e.preventDefault();
