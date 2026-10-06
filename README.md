@@ -15,7 +15,7 @@ A versão pronta fica em `docs/index.html`, com código, estilos e imagens embut
 1. Escolha nome, empresa, idade, ponto forte e cor do personagem.
 2. Ande com **WASD**, **setas** ou um **clique/toque no chão**. Pressione **E** perto do setor para consultar. Clicar no nome de um setor ou no atalho inferior faz o personagem caminhar até ele e abrir a consulta ao chegar.
 3. Vá ao **Comercial**. Investigue o escopo e escolha entre proposta competitiva, equilibrada e premium. A interface mostra a chance de fechar: discovery, reputação, salas e apresentações ajudam. Há uma tentativa por contato; uma recusa não permite repetir a proposta.
-4. Vá ao **Meu PC**: o fundador se senta diante do computador e abre uma área de trabalho. No aplicativo **Desenvolvimento**, distribua oito horas, escolha seu projeto prioritário e inicie uma sessão de cinco puzzles de escritório. Discovery, entrevistas, deslocamento e protótipos disputam esse orçamento.
+4. Vá ao **Meu PC**: o fundador se senta diante do computador. Na primeira visita, crie a senha do PC do jogo; nas seguintes, entre com ela. Abra **Desenvolver** e digite `rotina` para distribuir oito horas, `foco` para escolher o projeto e `trabalhar` para iniciar cinco puzzles de escritório. Discovery, entrevistas, deslocamento e protótipos disputam esse orçamento.
 5. Consulte o **Quadro de projetos** para acompanhar entregas, escolher o ritmo e resolver pedidos extras, bloqueios ou bugs. Na **Loja**, compre uma mesa e uma cadeira para abrir uma vaga. No **RH**, entreviste antes de contratar e distribua pessoas entre desenvolvimento e revisão.
 6. Faça pausas na **Copa** e no **Descanso**. Compre melhorias na **Loja**: elas aparecem no cenário, ocupam espaço e afetam produção, moral, negociações e custos.
 7. Vá a **Fechar o dia** para executar a rotina restante, contabilizar custos e consultar o resumo. Também pode usar play e velocidades **1×, 2× e 4×**; um dia dura dois minutos em 1×. Consultar um setor pausa o tempo.
@@ -26,13 +26,31 @@ A versão pronta fica em `docs/index.html`, com código, estilos e imagens embut
 
 ## Seu computador e as sessões de trabalho
 
-Caminhe até **Meu PC** e pressione **E**, ou clique no setor. O fundador fica sentado diante do equipamento, com uma animação de uso. A tela abre o **devOS**, uma área de trabalho com três aplicativos:
+Caminhe até **Meu PC** e pressione **E**, ou clique no setor. O fundador fica sentado diante do equipamento, com uma animação de uso. A tela abre o **DevHouse 98**, inspirado no Windows clássico: monitor de época, tela de senha, ícones, menu Iniciar, janelas e barra de tarefas.
+
+Na primeira visita, defina e confirme uma senha de **4 a 24 caracteres** para esse computador do jogo. A senha é pedida novamente ao voltar ao PC ou recarregar a página. **Esqueci minha senha** permite criar outra sem perder a empresa. A configuração acompanha o save; a senha em texto não é salva.
+
+Depois de entrar, abra um dos três aplicativos:
 
 - **Expansão:** loja, ampliação, postos de trabalho, computadores, salas e identidade da empresa.
-- **Desenvolvimento:** rotina de oito horas, foco, revisão e sessões de trabalho.
+- **Desenvolver:** terminal interativo, rotina de oito horas, foco, revisão e sessões de trabalho.
 - **Laboratório:** protótipo, pesquisa e lançamento do MVP.
 
-Clique nos ícones ou na barra de tarefas para trocar de aplicativo. **Início** e o X da janela voltam à área de trabalho; **Voltar ao escritório** e **Esc** fecham o computador e levantam o fundador. O tempo fica pausado durante o uso. Financeiro, RH e os outros setores continuam sendo consultados no escritório.
+Clique nos ícones, no menu **Iniciar** ou na barra de tarefas para trocar de aplicativo. Os botões da janela permitem minimizar, maximizar e fechar. **Bloquear** volta à tela de senha; **Voltar ao escritório** e **Esc** fecham o computador e levantam o fundador. O tempo fica pausado durante o uso. Financeiro, RH e os outros setores continuam sendo consultados no escritório.
+
+Em **Desenvolver**, digite um comando e pressione **Enter**, ou use os botões correspondentes:
+
+| Comando | Ação |
+| --- | --- |
+| `ajuda` | Lista os comandos |
+| `status` | Consulta projeto, rotina e sessão salva |
+| `trabalhar` | Inicia ou retoma os cinco puzzles |
+| `1`, `2`, `3`, `4` | Escolhe a resposta da decisão atual |
+| `concluir` | Aplica ao projeto uma sessão respondida |
+| `rotina` | Abre a distribuição das oito horas |
+| `foco` | Abre a escolha do projeto prioritário |
+| `revisar` | Usa uma hora disponível de revisão |
+| `limpar` | Limpa o histórico de comandos |
 
 Trabalhar exige **cinco puzzles rápidos**, com situações relacionadas ao projeto e à empresa: agenda e orçamento de horas, negociação de escopo, prioridades, recebimentos e conferência de qualidade. As situações e a posição das respostas variam. Cada resposta recebe uma explicação; erros são registrados e afetam a qualidade da entrega.
 
@@ -138,7 +156,7 @@ npm run build
 npm run test:browser
 ```
 
-A suíte Node cobre 81 cenários de negócio, orçamento de horas, puzzles, imprevistos, crédito, produto, progressão do escritório, efeitos das salas, manutenção e migração dos saves. O teste de navegador usa Python Playwright e Chromium, disponíveis nesta imagem de nuvem. Ele inicia seu próprio servidor Vite em uma porta livre, usa contextos isolados e percorre os setores com o personagem, verificando contratos, equipe, entregas, recebimentos, compras, ampliações, salas, ações especiais, salvamento, migração e layout móvel. Encerra apenas o servidor que iniciou. `GAME_TEST_ARTIFACTS` permite escolher a pasta das capturas.
+A suíte Node cobre 88 cenários de negócio, orçamento de horas, puzzles, senha do PC, comandos do terminal, imprevistos, crédito, produto, progressão do escritório, efeitos das salas, manutenção e migração dos saves. O teste de navegador usa Python Playwright e Chromium, disponíveis nesta imagem de nuvem. Ele inicia seu próprio servidor Vite em uma porta livre, usa contextos isolados e percorre os setores com o personagem, verificando contratos, equipe, entregas, recebimentos, compras, ampliações, salas, ações especiais, senha e recuperação do PC, comandos digitados, janelas, salvamento, migração e layout móvel. Encerra apenas o servidor que iniciou. `GAME_TEST_ARTIFACTS` permite escolher a pasta das capturas.
 
 ## Estrutura
 
@@ -151,6 +169,7 @@ A suíte Node cobre 81 cenários de negócio, orçamento de horas, puzzles, impr
 | `src/office-progression.js` | Catálogo, requisitos, ocupação, custos e efeitos do escritório |
 | `src/store-ui.js` | Loja contextual com custos, vagas, salas e identidade |
 | `src/computer-ui.js` | Área de trabalho, aplicativos e interface dos puzzles |
+| `src/computer-session.js` | Senha do PC e interpretação dos comandos do terminal |
 | `src/work-puzzles.js` | Situações de escritório, respostas e validação das sessões |
 | `src/simulation.js` | Regras econômicas, projetos, ações e salvamento versionado |
 | `src/style.css` | Aparência, consultas, diálogos e layout responsivo |

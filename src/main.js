@@ -1,7 +1,8 @@
 import './style.css';
 import { OfficeScene } from './office.js';
 import { renderOfficeStore } from './store-ui.js';
-import { renderComputer, renderWorkPuzzle } from './computer-ui.js';
+import { renderComputer, renderDevelopmentTerminal } from './computer-ui.js';
+import { getComputerLoginMode, configureComputerPassword, authenticateComputer, parseTerminalCommand } from './computer-session.js';
 import { icon, escape, money, pct, avatar } from './ui.js';
 import { CANDIDATES, createGame, loadGame, saveGame, advanceDay, prospect, hireEmployee, setAllocation, setProjectMode, performAction, negotiateProject, discoverLead, interviewCandidate, assignEmployee, resolveProjectEvent, setProjectPriority, collectReceivable, investProduct, recordTravel, takeLoan, repayLoan, getOfficeOverview, getRoomEffects, ROOM_ACTIONS, getRoomActionEligibility, purchaseOfficeItem, expandOffice, upgradeRoom, customizeBanner, upgradeComputer, performRoomAction, getNegotiationChance, getWorkSession, getWorkSessionEligibility, startWorkSession, answerWorkPuzzle, completeWorkSession } from './simulation.js';
 
@@ -16,6 +17,15 @@ let panelWasPaused = true;
 let panelTab = 'main';
 let computerApp = 'desktop';
 let computerStoreTab = 'overview';
+let computerUnlocked = false;
+let computerLoginMode = null;
+let computerLoginError = '';
+let computerLoginBusy = false;
+let computerSessionId = 0;
+let computerStartMenuOpen = false;
+let computerMaximized = false;
+let terminalView = 'work';
+let terminalHistory = [];
 let pendingSummary = null;
 let toastTimer;
 let positionTimer;
@@ -40,9 +50,113 @@ const stations = {
 document.querySelector('#app').innerHTML = `<main class="game-shell"><section id="world-stage" class="world-stage" aria-label="Escritório da sua empresa"><canvas id="office-canvas" tabindex="0"></canvas><header class="world-topbar"><a class="brand" href="#" aria-label="devhouse"><span class="brand-mark">${icon('code')}</span><span>devhouse<span class="brand-dot">.</span></span></a><div class="world-identity"><strong id="company-name"></strong><small>SEU ESCRITÓRIO · SUA HISTÓRIA</small></div><div class="world-time"><strong id="day-date"></strong><span id="day-time"></span></div><div class="time-controls"><button class="icon-button" id="pause-button" data-action="pause" aria-label="Retomar tempo">${icon('play')}</button><button class="speed-button" id="speed-button" data-action="speed" title="Alterar velocidade">1×</button><span class="hud-divider"></span><button class="icon-button" data-travel="reception" aria-label="Ir ao diário e ao guia do fundador">${icon('book')}</button><span id="save-status" class="save-status" title="Salvamento automático">${icon('check')}</span></div></header><div class="world-bottom"><div class="walk-help"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar</span><span><kbd>E</kbd> consultar</span><span><kbd>Esc</kbd> voltar</span></div><div id="context-prompt" class="context-prompt">Clique em um setor para caminhar até ele.</div><nav class="office-compass" aria-label="Caminhar até um setor">${Object.entries(stations).map(([key, s]) => `<button data-travel="${key}" title="Caminhar até ${s.short}" aria-label="Caminhar até ${s.short}">${icon(s.icon)}<span>${s.short}</span></button>`).join('')}</nav></div><div class="world-watermark">CAPÍTULO 02 · A EMPRESA ACONTECE AQUI</div><section id="station-panel" class="station-panel" hidden aria-label="Consulta no setor do escritório"></section></section></main>`;
 
 function activeProjects() { return state.projects.filter((p) => p.status === 'active'); }
-function isStoreOpen() { return currentStation === 'furniture' || currentStation === 'work' && computerApp === 'expansion'; }
+function isComputerApp(app) { return currentStation === 'work' && computerUnlocked && computerApp === app; }
+function isStoreOpen() { return currentStation === 'furniture' || isComputerApp('expansion'); }
 function focusWorkPuzzle() {
-  document.querySelector('#station-panel [data-puzzle-answer], #station-panel [data-action="complete-work-session"]')?.focus({ preventScroll: true });
+  document.querySelector('#terminal-command, #station-panel [data-puzzle-answer], #station-panel [data-action="complete-work-session"]')?.focus({ preventScroll: true });
+}
+function panelScroller(panel = document.querySelector('#station-panel')) {
+  return panel.querySelector('.terminal-output-area') || panel.querySelector('.computer-window-content') || panel.querySelector('.station-body');
+}
+function lockComputer() {
+  computerSessionId++;
+  computerUnlocked = false;
+  computerLoginMode = null;
+  computerLoginError = '';
+  computerLoginBusy = false;
+  computerStartMenuOpen = false;
+  computerMaximized = false;
+  computerApp = 'desktop';
+}
+function focusComputer() {
+  const selector = !computerUnlocked ? '#computer-login-form input[name="password"]'
+    : computerApp === 'development' ? '#terminal-command' : '#station-panel [data-computer-command="start-menu"]';
+  requestAnimationFrame(() => document.querySelector(selector)?.focus({ preventScroll: true }));
+}
+function terminalLog(command, output) {
+  terminalHistory.push({ command: String(command).slice(0, 120), output: String(output) });
+  terminalHistory = terminalHistory.slice(-12);
+}
+function executeTerminalCommand(input) {
+  if (!isComputerApp('development') || !scene.isNearStation('work')) return;
+  const parsed = parseTerminalCommand(input);
+  if (!parsed.command) return focusWorkPuzzle();
+  let output;
+  let result;
+  switch (parsed.command) {
+    case 'ajuda':
+      output = 'trabalhar: iniciar ou retomar 5 decisões; 1–4: responder; concluir: aplicar a produção; rotina: distribuir as 8h; foco: escolher projeto; revisar: usar 1h de revisão; status: consultar o dia; limpar: limpar o histórico.';
+      break;
+    case 'status': {
+      const session = getWorkSession(state);
+      const project = state.projects.find((p) => p.id === session?.projectId) || getWorkSessionEligibility(state).project;
+      output = `Dia ${state.day} | Energia ${Math.round(state.energy)}% | Dívida técnica ${Math.round(state.debt)}%\nRotina: ${state.allocation.sales}h vendas, ${state.allocation.delivery}h desenvolvimento, ${state.allocation.quality}h revisão.\n${project ? `${project.title}: ${project.progress.toFixed(1)}/${project.hours}h, qualidade ${Math.round(project.quality)}%.` : 'Nenhum contrato ativo. Visite o Comercial.'}\n${session ? `Sessão salva: ${session.index}/${session.total} decisões. ${session.status === 'ready' ? 'Digite concluir para aplicar.' : 'Responda com 1, 2, 3 ou 4.'}` : getWorkSessionEligibility(state).reason || 'Pronto para iniciar uma sessão de trabalho.'}`;
+      break;
+    }
+    case 'rotina':
+    case 'foco':
+      terminalView = 'routine';
+      panelTab = parsed.command === 'foco' ? 'focus' : 'main';
+      output = parsed.command === 'foco' ? 'Selecione o projeto prioritário abaixo.' : 'Ajuste a distribuição das oito horas abaixo.';
+      break;
+    case 'trabalhar':
+      terminalView = 'work';
+      result = run(startWorkSession);
+      break;
+    case 'answer': {
+      terminalView = 'work';
+      const session = getWorkSession(state);
+      const option = session?.currentPuzzle?.options?.[parsed.argument];
+      if (!option) output = session?.status === 'ready' ? 'As cinco decisões estão registradas. Digite concluir para aplicar o trabalho.' : 'Nenhuma decisão aberta. Digite trabalhar para começar.';
+      else result = run(answerWorkPuzzle, option.id);
+      break;
+    }
+    case 'concluir':
+      terminalView = 'work';
+      result = run(completeWorkSession);
+      break;
+    case 'revisar':
+      result = run(performAction, 'review');
+      break;
+    case 'limpar':
+      terminalHistory = [];
+      break;
+    default:
+      output = 'Comando desconhecido. Digite ajuda para consultar os comandos disponíveis.';
+  }
+  if (parsed.command !== 'limpar') terminalLog(input, result?.message || output || 'Pronto.');
+  renderStation();
+  const scroller = panelScroller();
+  const outputTarget = ['answer', 'trabalhar'].includes(parsed.command)
+    ? document.querySelector('#station-panel .puzzle-question') || document.querySelector('#station-panel .puzzle-results') || document.querySelector('#station-panel .work-puzzle')
+    : document.querySelector(['rotina', 'foco'].includes(parsed.command) ? '#station-panel .terminal-routine' : '#station-panel .terminal-history .terminal-output:last-child');
+  if (scroller && outputTarget) scroller.scrollTop += outputTarget.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  else if (scroller && parsed.command === 'limpar') scroller.scrollTop = 0;
+  focusWorkPuzzle();
+}
+async function submitComputerLogin(form) {
+  if (currentStation !== 'work' || computerUnlocked || computerLoginBusy || !scene.isNearStation('work')) return;
+  const sessionId = computerSessionId;
+  const game = state;
+  const mode = computerLoginMode || getComputerLoginMode(game);
+  const values = new FormData(form);
+  const candidate = { computer: game.computer };
+  computerLoginBusy = true;
+  const result = mode === 'login'
+    ? await authenticateComputer(candidate, values.get('password'))
+    : await configureComputerPassword(candidate, values.get('password'), values.get('confirm'));
+  if (state !== game || sessionId !== computerSessionId || currentStation !== 'work') return;
+  computerLoginBusy = false;
+  if (result.ok) {
+    if (mode !== 'login') state.computer = candidate.computer;
+    computerUnlocked = true;
+    computerLoginMode = null;
+    computerLoginError = '';
+    computerApp = 'desktop';
+    persist();
+  } else computerLoginError = result.message;
+  renderStation();
+  focusComputer();
 }
 function dailyCost() {
   const office = getOfficeOverview(state);
@@ -105,7 +219,7 @@ function openStation(action) {
   if (currentStation !== action) {
     panelWasPaused = state.paused;
     panelTab = 'main';
-    if (action === 'work') { computerApp = 'desktop'; computerStoreTab = 'overview'; }
+    if (action === 'work') { lockComputer(); computerStoreTab = 'overview'; terminalView = 'work'; }
   }
   currentStation = action;
   state.paused = true;
@@ -115,10 +229,12 @@ function openStation(action) {
   renderStation();
   renderClock();
   persist();
-  requestAnimationFrame(() => document.querySelector('#station-panel [data-action="close-station"]')?.focus());
+  if (action === 'work') focusComputer();
+  else requestAnimationFrame(() => document.querySelector('#station-panel [data-action="close-station"]')?.focus());
 }
 function closeStation() {
   if (!currentStation) return;
+  if (currentStation === 'work') lockComputer();
   scene.setPlayerSeated?.(false);
   state.officePosition = { x: scene.player.x, y: scene.player.y };
   currentStation = null;
@@ -154,7 +270,7 @@ function tabs(items) {
 }
 function selectPanelTab(id, attribute) {
   panelTab = id;
-  (document.querySelector('#station-panel .computer-window-content') || document.querySelector('#station-panel .station-body')).scrollTop = 0;
+  panelScroller().scrollTop = 0;
   renderStation();
   document.querySelector(`#station-panel [${attribute}="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
 }
@@ -192,13 +308,14 @@ function specialRoomContent(room) {
 function renderStation() {
   const el = document.querySelector('#station-panel');
   const s = stations[currentStation];
-  const previousScroll = (el.querySelector('.computer-window-content') || el.querySelector('.station-body'))?.scrollTop || 0;
+  const previousScroll = panelScroller(el)?.scrollTop || 0;
   el.hidden = false;
   el.dataset.station = currentStation;
   el.classList.toggle('computer-panel', currentStation === 'work');
+  el.classList.toggle('computer-maximized', currentStation === 'work' && computerMaximized);
   if (currentStation === 'work') {
     el.innerHTML = `<div class="station-frame computer-frame"><div class="station-body computer-host">${stationContent('work')}</div></div>`;
-    (el.querySelector('.computer-window-content') || el.querySelector('.station-body')).scrollTop = previousScroll;
+    panelScroller(el).scrollTop = previousScroll;
     requestAnimationFrame(positionPanel);
     return;
   }
@@ -210,16 +327,16 @@ function developmentContent() {
     const categories = [['sales', 'Vender & descobrir', 'message'], ['delivery', 'Desenvolver & criar', 'code'], ['quality', 'Revisar & gerir', 'target']];
     const effects = getRoomEffects(state);
     const routine = `${tabs([['main', 'Rotina de hoje'], ['focus', 'Foco & código']])}${stats([['ENERGIA', `${Math.round(state.energy)}%`, 'Café e descanso recuperam'], ['DÍVIDA TÉCNICA', `${Math.round(state.debt)}%`, 'Qualidade reduz o custo futuro'], ['DESLOCAMENTO', `${(state.travelHours || 0).toFixed(2)}h`, 'Tempo que sai da capacidade de entrega']])}<div class="concept-note">${icon('people')}<p>Ruído entre comercial e desenvolvimento: <strong>${Math.round(effects.noise * 100)}%</strong>. Sinergia da equipe: <strong>${Math.round(effects.synergy * 100)}%</strong>. Isolar setores reduz interrupções; manter proximidade facilita revisões e ajuda contra bloqueios.</p></div>${panelTab === 'focus' ? `<h3 class="subheading">Em qual projeto você vai se concentrar?</h3><p class="muted">Seu foco define a prioridade das horas do fundador. O RH distribui o trabalho da equipe.</p>${activeProjects().map((p) => `<article class="project-card">${projectRow(p)}<button class="${state.focusProjectId === p.id ? 'primary' : 'secondary'}-button compact full" data-project-priority="${escape(p.id)}">${state.focusProjectId === p.id ? `${icon('check')} Foco atual` : 'Priorizar este projeto'}</button></article>`).join('') || '<div class="empty-state">Nenhum contrato na mesa. Vá ao comercial para fechar seu primeiro projeto.</div>'}<div class="action-grid"><button class="secondary-button" data-action="review">${icon('target')} Revisar 1h</button></div>` : `<h3 class="subheading">Oito horas. Escolhas que competem.</h3><p class="muted">Discovery e propostas usam vendas; entrevistas e pesquisa usam qualidade; protótipos e código usam desenvolvimento.</p><div class="allocation-bar">${categories.map(([key]) => `<span class="${key}" style="flex:${state.allocation[key]}"></span>`).join('')}</div><div class="allocation-rows">${categories.map(([key, label, glyph]) => `<div class="allocation-row"><div class="allocation-label"><span class="allocation-icon ${key}">${icon(glyph)}</span><strong>${label}</strong><b>${state.allocation[key]}h</b></div><input class="range ${key}" type="range" min="0" max="8" step="1" value="${state.allocation[key]}" data-allocation="${key}" aria-label="Horas para ${label}"/></div>`).join('')}</div><div class="action-grid"><button class="secondary-button" data-action="review">${icon('target')} Revisar 1h</button></div><div class="concept-note">${icon('clock')}<p>Trabalho manual adianta as horas reservadas; não cria horas extras. Ao fechar o escritório, a rotina restante e as tarefas da equipe são executadas.</p></div>`}`;
-    return `${renderWorkPuzzle(state, getWorkSession(state), getWorkSessionEligibility(state))}${routine}`;
+    return renderDevelopmentTerminal(state, { session: getWorkSession(state), eligibility: getWorkSessionEligibility(state), routine, view: terminalView, history: terminalHistory });
 }
 function stationContent(action) {
   if (action === 'work') {
-    const content = computerApp === 'expansion' ? renderOfficeStore(state, computerStoreTab)
+    const content = !computerUnlocked ? '' : computerApp === 'expansion' ? renderOfficeStore(state, computerStoreTab)
       : computerApp === 'development' ? developmentContent()
         : computerApp === 'laboratory' ? stationContent('product') : '';
     const minute = Math.floor(Math.min(elapsed, 120) / 120 * 480);
     const clock = `${String(9 + Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
-    return renderComputer(state, { app: computerApp, content, session: getWorkSession(state), clock });
+    return renderComputer(state, { app: computerApp, content, session: getWorkSession(state), clock, locked: !computerUnlocked, loginMode: computerLoginMode || getComputerLoginMode(state), loginError: computerLoginError, startMenuOpen: computerStartMenuOpen, maximized: computerMaximized });
   }
   if (action === 'sales') {
     return `${stats([['CONTATOS', state.leads.length, 'Até 6 oportunidades abertas'], ['REPUTAÇÃO', `${Math.round(state.reputation)}/100`, 'Influencia propostas premium'], ['TEMPO COMERCIAL', `${state.allocation.sales}h`, 'Discovery usa uma hora da rotina']])}<div class="section-header"><h3 class="subheading">Qual problema vale sua próxima hora?</h3><button class="secondary-button compact" data-action="prospect">${icon('plus')} Prospectar</button></div><p class="muted">Investigar antes de vender diminui incerteza. Preço e salas mudam as chances de fechar, prazo e recebimento. Cada contato tem uma tentativa de negociação.</p>${state.leads.map((l, i) => `<article class="opportunity-card"><div class="opportunity-top"><span class="client-monogram color-${i % 3}">${escape(l.client.slice(0, 2).toUpperCase())}</span><div><small>${escape(l.sector)}</small><strong>${escape(l.client)}</strong></div><span class="tag">${l.discovered ? 'ESCOPO DESCOBERTO' : 'CONTATO ABERTO'}</span></div><h3>${escape(l.title)}</h3><p>${escape(l.description)}</p><div class="opportunity-meta"><span>${icon('clock')} ${l.estimateMin || Math.floor(l.hours * .85)}–${l.estimateMax || Math.ceil(l.hours * 1.25)}h estimadas</span><span>${l.duration} dias</span></div>${l.discovered ? `<div class="discovery-note"><strong>Discovery concluído</strong><p>${escape(l.qualification?.scope || 'O cliente confirmou o escopo e as necessidades prioritárias.')}</p><small>${escape(l.qualification?.risks || 'Menos incerteza para defender sua proposta.')}</small></div>` : `<button class="secondary-button compact full" data-discover="${escape(l.id)}" ${l.negotiation ? 'disabled' : ''}>${icon('message')} Investigar o escopo · 1h de vendas</button>`}${l.negotiation ? `<div class="interview-note"><strong>Negociação encerrada</strong><p>O cliente recusou a proposta. Novos contatos chegam pela prospecção; esta negociação não pode ser repetida.</p></div>` : ''}<div class="proposal-options"><button data-negotiate="${escape(l.id)}" data-pricing="discount" ${l.negotiation ? 'disabled' : ''}><small>COMPETITIVA</small><strong>${money(l.price * .85)}</strong><span>+2 dias de prazo · recebe D+2<br>${Math.round(getNegotiationChance(state, l.id, 'discount') * 100)}% de chance de fechar</span></button><button data-negotiate="${escape(l.id)}" data-pricing="standard" class="recommended" ${l.negotiation ? 'disabled' : ''}><small>EQUILIBRADA</small><strong>${money(l.price)}</strong><span>Prazo base · recebe D+3<br>${Math.round(getNegotiationChance(state, l.id, 'standard') * 100)}% de chance de fechar</span></button><button data-negotiate="${escape(l.id)}" data-pricing="premium" ${l.negotiation || (!l.discovered && state.reputation < 25) ? 'disabled' : ''}><small>PREMIUM</small><strong>${money(l.price * 1.2)}</strong><span>−2 dias de prazo · recebe D+5<br>${Math.round(getNegotiationChance(state, l.id, 'premium') * 100)}% de chance de fechar</span></button></div></article>`).join('') || '<div class="empty-state">Seu pipeline está vazio. Prospecte ou reserve mais horas de vendas.</div>'}`;
@@ -249,7 +366,7 @@ function stationContent(action) {
     return `${product.unlocked ? `<span class="tag">${product.stage === 'launched' ? 'PRODUTO LANÇADO' : 'IDEIA EM CONSTRUÇÃO'}</span><h3 class="subheading">Sua próxima receita pode ser recorrente.</h3>${stats([['MVP', `${Math.round(product.progress)}%`, 'Construção e validação'], ['PESQUISAS', product.research, 'Duas validações para lançar'], ['MRR', money(product.mrr), `${product.users} usuários`]])}<div class="mini-meter product-meter"><span style="width:${pct(product.progress)}%"></span></div><p class="muted">O laboratório disputa as mesmas horas que pagam seus contratos. Um protótipo usa 2h de desenvolvimento e R$ 300; pesquisar usa 1h de qualidade e R$ 150. Cabe um investimento por dia.</p>${product.stage === 'launched' ? `<div class="discovery-note"><strong>MVP lançado</strong><p>Próxima receita prevista: D${product.nextPaymentDay}. O ciclo de 28 dias cobra R$ 100 de suporte.</p></div>` : ''}<div class="action-grid"><button class="primary-button" data-product="prototype" ${product.stage === 'launched' || product.progress >= 100 || state.dailyActions.product >= 1 ? 'disabled' : ''}>${icon('code')} Construir protótipo</button><button class="secondary-button" data-product="research" ${product.stage === 'launched' || state.dailyActions.product >= 1 ? 'disabled' : ''}>${icon('message')} Validar com usuários</button></div>` : `<div class="product-locked">${icon('lock')}<h3>Conheça clientes antes de apostar.</h3><p>Entregue dois projetos para liberar seu laboratório. As dores que você descobriu podem se transformar em produto.</p><span class="tag">${state.stats.delivered} / 2 ENTREGAS</span></div>`}<div class="product-roadmap"><span>01 · IDEIA</span><span>02 · MVP</span><span>03 · LANÇAMENTO</span><span>04 · RECORRÊNCIA</span></div><div class="concept-note">${icon('bulb')}<p>Serviço paga as contas hoje. Produto consome caixa e capacidade antes de começar a gerar receita. O desafio é escolher o momento.</p></div>`;
   }
   if (action === 'reception') {
-    return `${tabs([['main', pendingSummary ? 'Fechamento & diário' : 'Diário & conquistas'], ['guide', 'Guia & identidade']])}${panelTab === 'guide' ? `<div class="guide-grid"><article>${icon('message')}<h3>Vender exige presença</h3><p>Vá ao comercial. Descubra o escopo e escolha preço, prazo e recebimento.</p></article><article>${icon('code')}<h3>Seu dia tem oito horas</h3><p>Organize a rotina no computador. Caminhar, entrevistar e construir competem com as entregas.</p></article><article>${icon('folder')}<h3>Projetos pedem decisões</h3><p>O quadro mostra progresso, qualidade e imprevistos. Resolva pedidos extras e bloqueios antes que custem prazo.</p></article><article>${icon('people')}<h3>Delegar tem consequências</h3><p>Entreviste no RH e escolha quem desenvolve ou revisa cada projeto. Equipe custa folha e precisa de equilíbrio. Prepare mesa e cadeira na loja antes de contratar.</p></article><article>${icon('chair')}<h3>O espaço também é estratégia</h3><p>A garagem cresce para uma sala comercial e um andar inteiro. Cada sala disputa espaço e cobra manutenção. Separar setores reduz ruído, mas também a sinergia.</p></article></div><div class="action-grid"><button class="secondary-button" data-action="profile">${avatar(state.profile.avatarColor, 28)} Meu fundador</button><button class="secondary-button" data-action="new-game">Começar outra história</button></div>` : `${pendingSummary ? summaryMarkup() : ''}${stats([['REPUTAÇÃO', `${Math.round(state.reputation)}/100`, 'Sobe com qualidade, cai com atrasos'], ['ENTREGAS', state.stats.delivered, 'Seu portfólio cresce a cada cliente'], ['HORAS DE ENTREGA', `${state.stats.hoursWorked.toFixed(1)}h`, 'Tempo transformado em resultado']])}<ol class="mission-checklist"><li class="done">${icon('check')} Abra as portas da empresa.</li><li class="${state.projects.length ? 'done' : ''}">${icon(state.projects.length ? 'check' : 'target')} Feche seu primeiro contrato no comercial.</li><li class="${state.stats.delivered ? 'done' : ''}">${icon(state.stats.delivered ? 'check' : 'target')} Faça a primeira entrega pelo quadro.</li><li class="${state.employees.length ? 'done' : ''}">${icon(state.employees.length ? 'check' : 'target')} Entreviste e traga uma pessoa pelo RH.</li><li class="${state.product?.unlocked ? 'done' : ''}">${icon(state.product?.unlocked ? 'check' : 'target')} Entregue dois projetos e libere o laboratório.</li></ol><h3 class="subheading">Diário do fundador</h3><div class="activity-list">${state.log.slice(0, 12).map((l) => `<div class="activity"><span class="activity-dot"></span><p>${escape(l.message)}</p><small>D${l.day}</small></div>`).join('')}</div>`}`;
+    return `${tabs([['main', pendingSummary ? 'Fechamento & diário' : 'Diário & conquistas'], ['guide', 'Guia & identidade']])}${panelTab === 'guide' ? `<div class="guide-grid"><article>${icon('message')}<h3>Vender exige presença</h3><p>Vá ao comercial. Descubra o escopo e escolha preço, prazo e recebimento.</p></article><article>${icon('code')}<h3>Seu dia tem oito horas</h3><p>Crie a senha do Meu PC e abra Desenvolver. Digite rotina para dividir as oito horas, trabalhar para resolver cinco decisões e concluir para aplicar a produção. Caminhar, entrevistar e construir usam o mesmo orçamento.</p></article><article>${icon('folder')}<h3>Projetos pedem decisões</h3><p>O quadro mostra progresso, qualidade e imprevistos. Resolva pedidos extras e bloqueios antes que custem prazo.</p></article><article>${icon('people')}<h3>Delegar tem consequências</h3><p>Entreviste no RH e escolha quem desenvolve ou revisa cada projeto. Equipe custa folha e precisa de equilíbrio. Prepare mesa e cadeira na loja antes de contratar.</p></article><article>${icon('chair')}<h3>O espaço também é estratégia</h3><p>A garagem cresce para uma sala comercial e um andar inteiro. Cada sala disputa espaço e cobra manutenção. Separar setores reduz ruído, mas também a sinergia.</p></article></div><div class="action-grid"><button class="secondary-button" data-action="profile">${avatar(state.profile.avatarColor, 28)} Meu fundador</button><button class="secondary-button" data-action="new-game">Começar outra história</button></div>` : `${pendingSummary ? summaryMarkup() : ''}${stats([['REPUTAÇÃO', `${Math.round(state.reputation)}/100`, 'Sobe com qualidade, cai com atrasos'], ['ENTREGAS', state.stats.delivered, 'Seu portfólio cresce a cada cliente'], ['HORAS DE ENTREGA', `${state.stats.hoursWorked.toFixed(1)}h`, 'Tempo transformado em resultado']])}<ol class="mission-checklist"><li class="done">${icon('check')} Abra as portas da empresa.</li><li class="${state.projects.length ? 'done' : ''}">${icon(state.projects.length ? 'check' : 'target')} Feche seu primeiro contrato no comercial.</li><li class="${state.stats.delivered ? 'done' : ''}">${icon(state.stats.delivered ? 'check' : 'target')} Faça a primeira entrega pelo quadro.</li><li class="${state.employees.length ? 'done' : ''}">${icon(state.employees.length ? 'check' : 'target')} Entreviste e traga uma pessoa pelo RH.</li><li class="${state.product?.unlocked ? 'done' : ''}">${icon(state.product?.unlocked ? 'check' : 'target')} Entregue dois projetos e libere o laboratório.</li></ol><h3 class="subheading">Diário do fundador</h3><div class="activity-list">${state.log.slice(0, 12).map((l) => `<div class="activity"><span class="activity-dot"></span><p>${escape(l.message)}</p><small>D${l.day}</small></div>`).join('')}</div>`}`;
   }
   if (action === 'exit') {
     if (pendingSummary) return summaryMarkup();
@@ -304,8 +421,10 @@ function showProfile(isNew = false) {
       document.querySelector('#station-panel').hidden = true;
       scene.setPlayerSeated?.(false);
       scene.setInteractionOpen(false);
-      computerApp = 'desktop';
+      lockComputer();
       computerStoreTab = 'overview';
+      terminalView = 'work';
+      terminalHistory = [];
       panelWasPaused = true;
       state = createGame(profile);
       gameStarted = true;
@@ -338,9 +457,9 @@ function handleAction(action) {
   if (action === 'end-day' && currentStation === 'exit') finishDay();
   else if (action === 'continue-day') { pendingSummary = null; closeStation(); }
   else if (action === 'prospect' && currentStation === 'sales') run(prospect);
-  else if (action === 'start-work-session' && currentStation === 'work' && computerApp === 'development') { run(startWorkSession); focusWorkPuzzle(); }
-  else if (action === 'complete-work-session' && currentStation === 'work' && computerApp === 'development') run(completeWorkSession);
-  else if (action === 'review' && currentStation === 'work' && computerApp === 'development') run(performAction, 'review');
+  else if (action === 'start-work-session' && isComputerApp('development')) executeTerminalCommand('trabalhar');
+  else if (action === 'complete-work-session' && isComputerApp('development')) executeTerminalCommand('concluir');
+  else if (action === 'review' && isComputerApp('development')) executeTerminalCommand('revisar');
   else if (action === 'coffee' && currentStation === 'coffee') run(performAction, 'coffee');
   else if (action === 'rest' && currentStation === 'rest') run(performAction, 'rest');
   else if (action === 'take-loan' && currentStation === 'finance') run(takeLoan);
@@ -354,15 +473,37 @@ document.addEventListener('click', (e) => {
   if (target.dataset.travel) return travelTo(target.dataset.travel);
   if (target.dataset.action) return handleAction(target.dataset.action);
   if (!currentStation || !scene.isNearStation(currentStation)) return;
-  if (target.dataset.computerApp && currentStation === 'work' && ['desktop', 'expansion', 'development', 'laboratory'].includes(target.dataset.computerApp)) {
-    if (target.dataset.computerApp === 'development' && computerApp !== 'development') panelTab = 'main';
-    computerApp = target.dataset.computerApp;
-    (document.querySelector('#station-panel .computer-window-content') || document.querySelector('#station-panel .station-body')).scrollTop = 0;
+  if (target.dataset.computerCommand && currentStation === 'work') {
+    const command = target.dataset.computerCommand;
+    if (command === 'reset-password' && !computerUnlocked) {
+      lockComputer();
+      computerLoginMode = 'reset';
+    } else if (command === 'cancel-reset' && !computerUnlocked) lockComputer();
+    else if (command === 'lock' && computerUnlocked) lockComputer();
+    else if (command === 'start-menu' && computerUnlocked) computerStartMenuOpen = !computerStartMenuOpen;
+    else if (command === 'minimize' && computerUnlocked) { computerApp = 'desktop'; computerStartMenuOpen = false; }
+    else if (command === 'maximize' && computerUnlocked) computerMaximized = !computerMaximized;
+    else return;
     renderStation();
-    document.querySelector('#station-panel [data-computer-app=desktop]')?.focus({ preventScroll: true });
+    focusComputer();
     return;
   }
-  if (target.dataset.puzzleAnswer && currentStation === 'work' && computerApp === 'development') { run(answerWorkPuzzle, target.dataset.puzzleAnswer); focusWorkPuzzle(); return; }
+  if (currentStation === 'work' && !computerUnlocked) return;
+  if (target.dataset.terminalCommand && isComputerApp('development')) return executeTerminalCommand(target.dataset.terminalCommand);
+  if (target.dataset.computerApp && currentStation === 'work' && ['desktop', 'expansion', 'development', 'laboratory'].includes(target.dataset.computerApp)) {
+    if (target.dataset.computerApp === 'development' && computerApp !== 'development') { panelTab = 'main'; terminalView = 'work'; }
+    computerApp = target.dataset.computerApp;
+    computerStartMenuOpen = false;
+    panelScroller().scrollTop = 0;
+    renderStation();
+    focusComputer();
+    return;
+  }
+  if (target.dataset.puzzleAnswer && isComputerApp('development')) {
+    const index = getWorkSession(state)?.currentPuzzle?.options?.findIndex((option) => option.id === target.dataset.puzzleAnswer);
+    if (index >= 0) executeTerminalCommand(String(index + 1));
+    return;
+  }
   if (target.dataset.stationTab) return selectPanelTab(target.dataset.stationTab, 'data-station-tab');
   if (target.dataset.storeTab && isStoreOpen()) {
     if (currentStation === 'work') computerStoreTab = target.dataset.storeTab;
@@ -386,6 +527,12 @@ document.addEventListener('click', (e) => {
   else if (target.dataset.product && (currentStation === 'product' || currentStation === 'work' && computerApp === 'laboratory')) run(investProduct, target.dataset.product);
 });
 document.addEventListener('submit', (e) => {
+  if (e.target.id === 'computer-login-form') { e.preventDefault(); void submitComputerLogin(e.target); return; }
+  if (e.target.id === 'terminal-command-form') {
+    e.preventDefault();
+    executeTerminalCommand(new FormData(e.target).get('command'));
+    return;
+  }
   if (e.target.id !== 'banner-form') return;
   e.preventDefault();
   if (!isStoreOpen() || !scene.isNearStation(currentStation)) return;
@@ -394,6 +541,7 @@ document.addEventListener('submit', (e) => {
 });
 document.addEventListener('change', (e) => {
   if (!currentStation || !scene.isNearStation(currentStation)) return;
+  if (currentStation === 'work' && !computerUnlocked) return;
   const t = e.target;
   if (t.dataset.allocation && currentStation === 'work' && computerApp === 'development') run(setAllocation, t.dataset.allocation, Number(t.value));
   else if (t.dataset.projectMode && currentStation === 'board') run(setProjectMode, t.dataset.projectMode, t.value);
@@ -409,6 +557,7 @@ document.addEventListener('keydown', (e) => {
   const modal = document.querySelector('.modal');
   if (e.key === 'Escape') {
     if (modal?.querySelector('[data-action="close-modal"]')) { e.preventDefault(); closeModal(); }
+    else if (!modal && currentStation === 'work' && computerStartMenuOpen) { e.preventDefault(); computerStartMenuOpen = false; renderStation(); focusComputer(); }
     else if (!modal && currentStation) { e.preventDefault(); closeStation(); }
   }
   const container = modal || (!document.querySelector('#station-panel').hidden ? document.querySelector('#station-panel') : null);
@@ -432,7 +581,7 @@ scene = new OfficeScene(document.querySelector('#office-canvas'), {
 });
 render();
 if (!saved) showProfile(true);
-else toast('Bem-vindo de volta. Sua empresa foi preservada. A loja agora permite evoluir o escritório e suas salas.');
+else toast('Bem-vindo de volta. Seu PC agora tem senha, área de trabalho clássica e um terminal para desenvolver.');
 setInterval(() => {
   if (state.paused || currentStation || document.querySelector('.modal-overlay') || state.status === 'bankrupt') return;
   elapsed += state.speed || 1;

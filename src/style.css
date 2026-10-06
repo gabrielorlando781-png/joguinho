@@ -747,218 +747,344 @@ select option { background: #1b2a21; }
   .store-banner-fields { grid-template-columns: minmax(0, 1fr) 65px; }
 }
 
-/* A desktop lives on the founder's physical screen, inside the office. */
+/* The founder's computer: a beige CRT and a familiar 1990s desktop. */
 .station-panel.computer-panel { width: min(900px, calc(100vw - 48px)); }
-.computer-frame { padding: 9px; background: #202b27; border-color: #75836a; border-radius: 18px; box-shadow: 0 24px 75px #0a1d1982, inset 0 1px #eaffcf19; }
+.station-panel.computer-panel.computer-maximized { width: min(1180px, calc(100vw - 48px)); }
+.computer-frame { padding: 12px; background: #cac7b8; border: 2px solid; border-color: #e9e6d9 #817d72 #726f66 #ebe8dd; border-radius: 17px; box-shadow: 0 22px 80px #071b1b85, inset 2px 2px #f8f5e6, inset -2px -2px #9d998b; backdrop-filter: none; }
 .station-body.computer-host { padding: 0; max-height: none; overflow: hidden; }
-.computer-monitor { min-width: 0; }
-.computer-bezel { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 11px 13px; color: #b3c2ab; }
-.computer-bezel > span { display: flex; align-items: center; gap: 7px; font-size: 9px; font-weight: 550; letter-spacing: 1.5px; }
-.computer-bezel > span .icon { width: 14px; height: 14px; color: #b4cb94; }
-.computer-power { display: inline-flex; align-items: center; gap: 6px; min-height: 27px; padding: 5px 8px; color: #aebda5; background: #d2e4bd08; border: 1px solid #a0b18b21; border-radius: 6px; font-size: 10px; }
-.computer-power:hover { color: #e1efcf; background: #d2e4bd13; }
-.computer-power .icon { width: 14px; height: 14px; }
-.computer-screen { display: flex; flex-direction: column; height: min(620px, calc(100dvh - 245px)); min-height: 330px; min-width: 0; overflow: hidden; border: 1px solid #11221c; border-radius: 11px; background: #1b2f32; }
-.computer-desktop { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 24px 30px 25px; background: radial-gradient(ellipse at 91% 9%, #6eafa93b, transparent 50%), radial-gradient(ellipse at 8% 101%, #45696370, transparent 56%), linear-gradient(130deg, #243b3e, #284849 56%, #304443); isolation: isolate; scrollbar-width: thin; scrollbar-color: #759783 transparent; }
-.computer-desktop-top { display: flex; align-items: center; justify-content: space-between; gap: 15px; position: relative; z-index: 1; }
-.computer-os-label { display: flex; align-items: center; gap: 8px; font-size: 19px; letter-spacing: -.5px; font-weight: 650; color: #e0efdf; }
-.computer-os-label .icon { width: 25px; height: 25px; }
-.computer-os-label > span { margin-left: 6px; padding-left: 12px; border-left: 1px solid #d8ecd13b; font-size: 9px; letter-spacing: 2px; color: #a6c1b2; font-weight: 400; }
-.computer-user { display: flex; align-items: center; gap: 8px; color: #d3e5d3; font-size: 11px; }
-.computer-user > span { min-width: 0; max-width: 165px; overflow-wrap: anywhere; }
-.computer-user small { display: block; margin-top: 3px; font-size: 9px; color: #99b6a1; }
-.computer-wallpaper-mark { position: absolute; inset: 0; z-index: -1; overflow: hidden; opacity: .6; pointer-events: none; }
-.wallpaper-orbit { position: absolute; right: -180px; top: 33px; width: 530px; height: 530px; border: 1px solid #aed4ac28; border-radius: 50%; transform: rotate(-27deg) scaleY(.7); box-shadow: 0 0 0 34px #acd4b804, 0 0 0 35px #acd4b80d, 0 0 0 90px #acd4b804; }
-.wallpaper-orbit.orbit-two { right: -255px; top: 48px; transform: rotate(24deg) scaleY(.58); border-color: #aecec62c; }
-.wallpaper-orbit.orbit-three { right: -120px; top: 78px; width: 430px; height: 430px; transform: rotate(-50deg) scaleY(.5); border-color: #c8dca720; }
-.computer-desktop-heading { position: relative; z-index: 1; margin: 35px 0 28px; }
-.computer-desktop-heading > span { font-size: 9px; letter-spacing: 1.8px; color: #afc8b1; }
-.computer-desktop-heading h3 { color: #e3efdc; border-left: 3px solid var(--company-color, #d7ed8d); padding-left: 12px; font-size: 31px; line-height: 1.25; letter-spacing: -.8px; font-weight: 550; margin: 12px 0 9px; max-width: 80%; text-shadow: 0 1px 10px #19383555; }
-.computer-desktop-heading p { font-size: 12px; line-height: 1.7; color: #b1c7b7; margin: 0; }
-.computer-desktop-apps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; position: relative; z-index: 1; }
-.computer-desktop-app { display: flex; flex-direction: column; align-items: flex-start; gap: 0; text-align: left; padding: 16px; min-height: 145px; border: 1px solid #c2debe28; background: #1c34393b; border-radius: 12px; transition: background .15s, transform .15s, border-color .15s; box-shadow: inset 0 1px #e6fbe607; }
-.computer-desktop-app:hover { border-color: #d7eac472; background: #3553538c; transform: translateY(-2px); }
-.computer-app-symbol { display: grid; place-items: center; width: 46px; height: 46px; margin-bottom: 16px; border: 1px solid #e6f5d34a; border-radius: 11px; box-shadow: 0 5px 15px #142b2828, inset 0 1px #ffffff33; color: #28423c; background: linear-gradient(150deg, #e1cd91, #b7aa77); }
-.computer-app-symbol .icon { width: 28px; height: 28px; stroke-width: 1.45; }
-.app-blue .computer-app-symbol { color: #1f454b; background: linear-gradient(150deg, #a0d3d2, #7badb3); border-color: #cde6e666; }
-.app-purple .computer-app-symbol { color: #443f55; background: linear-gradient(150deg, #c5bfdc, #a6a2c3); border-color: #e0dcf266; }
-.computer-desktop-app > strong { color: #e1ece1; font-size: 14px; font-weight: 550; line-height: 1.5; }
-.computer-desktop-app > small { display: block; margin-top: 5px; color: #a4beb0; font-size: 11px; line-height: 1.7; }
-.computer-desktop-notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; margin-top: 25px; position: relative; z-index: 1; }
-.computer-desktop-notes article { min-width: 0; padding-top: 13px; border-top: 1px solid #c2dcc331; }
-.computer-desktop-notes article > span { display: flex; align-items: center; gap: 6px; color: #acc7b5; font-size: 9px; letter-spacing: .5px; line-height: 1.7; }
-.computer-desktop-notes article > span .icon { width: 13px; height: 13px; }
-.computer-desktop-notes strong { display: block; margin-top: 7px; color: #d5e7d5; font-size: 12px; font-weight: 500; line-height: 1.6; }
-.computer-desktop-notes small { display: block; color: #9fbdaa; font-size: 10px; line-height: 1.8; margin-top: 5px; }
-.computer-taskbar { display: flex; align-items: center; gap: 8px; padding: 8px 11px; flex-shrink: 0; border-top: 1px solid #aac1a533; background: #182c2ceF; min-width: 0; box-shadow: 0 -4px 15px #13292915; }
-.computer-start, .computer-task-app { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 11px; min-height: 36px; border: 1px solid transparent; border-radius: 6px; color: #aebfad; background: transparent; font-size: 11px; }
-.computer-start .icon { width: 17px; height: 17px; }
-.computer-start.active, .computer-start:hover { border-color: #d7ed8d33; background: #d7ed8d0d; color: #d2e6ac; }
-.computer-task-divider { width: 1px; height: 22px; margin: 0 1px; flex-shrink: 0; background: #bdd6b52b; }
-.computer-pinned-apps { display: flex; align-items: center; gap: 3px; min-width: 0; }
-.computer-task-app { padding: 8px; position: relative; }
-.computer-task-app .icon { width: 17px; height: 17px; }
-.computer-task-app.app-gold { color: #d4c395; }
-.computer-task-app.app-blue { color: #a0c8cf; }
-.computer-task-app.app-purple { color: #bbb6d5; }
-.computer-task-app:hover, .computer-task-app.active { background: #d7ed8d0b; }
-.computer-task-app.active::after { content: ""; position: absolute; bottom: 2px; width: 15px; height: 2px; border-radius: 3px; background: currentColor; }
-.computer-session-indicator { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; white-space: nowrap; font-size: 9px; color: #91ae99; }
-.computer-clock { display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 4px; padding: 0 4px 0 8px; min-width: 55px; flex-shrink: 0; }
-.computer-clock strong { font-size: 11px; font-weight: 500; color: #cbdac3; font-variant-numeric: tabular-nums; }
-.computer-clock small { font-size: 9px; color: #8fa98d; }
-.computer-monitor-foot { display: flex; align-items: center; gap: 7px; padding: 11px 11px 3px; color: #8fa387; font-size: 9px; line-height: 1.5; }
-.computer-monitor-foot > span:last-child { margin-left: auto; }
-.computer-monitor-foot kbd { height: 17px; min-width: 22px; margin-right: 4px; color: #aebf9d; background: transparent; font-size: 9px; border-color: #b3c79a36; }
-.computer-power-led { width: 5px; height: 5px; border-radius: 50%; background: #c7e894; box-shadow: 0 0 6px #d1f4a965; }
-.computer-window { display: flex; flex-direction: column; flex: 1; min-height: 0; background: #1c2c24; }
-.computer-window-bar { display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding: 13px 18px; border-bottom: 1px solid #9eb77731; background: #304239; }
-.computer-window-symbol { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #d6c68634; border-radius: 8px; color: #d1c18c; background: #d6c6860d; }
-.app-blue .computer-window-symbol { color: #9fc7cd; border-color: #9fc7cd38; background: #9fc7cd0b; }
-.app-purple .computer-window-symbol { color: #bfb8d9; border-color: #bfb8d938; background: #bfb8d90b; }
-.computer-window-symbol .icon { width: 18px; height: 18px; }
-.computer-window-bar > div { flex: 1; min-width: 0; }
-.computer-window-bar strong { display: block; color: #e2edda; font-size: 13px; font-weight: 550; }
-.computer-window-bar small { display: block; color: #a0b296; font-size: 10px; margin-top: 5px; }
-.computer-window-home { display: grid; place-items: center; width: 31px; height: 31px; color: #b9c9ad; background: #d7ed8d05; border: 1px solid #d7ed8d12; border-radius: 6px; }
-.computer-window-home:hover { background: #d7ed8d16; }
-.computer-window-home .icon { width: 16px; height: 16px; }
-.computer-window-content { flex: 1; min-height: 0; padding: 23px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #687f4f transparent; }
+.computer-monitor { min-width: 0; color: #191919; font-family: Tahoma, Verdana, "Segoe UI", sans-serif; --pc-gray: #c0c0c0; --pc-blue: #000080; }
+.computer-monitor button:focus-visible, .computer-monitor input:focus-visible { outline: 1px dotted #111; outline-offset: -5px; }
+.computer-bezel { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 6px 11px; }
+.computer-bezel > span { color: #605e53; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-shadow: 0 1px #f7f4e4; }
+.computer-bezel b { margin-left: 8px; font-size: 8px; font-weight: 500; letter-spacing: 1px; }
+.computer-power { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; padding: 4px 7px; background: #c7c3b5; border: 1px solid; border-color: #f3efdf #888376 #888376 #f3efdf; border-radius: 3px; color: #4d4a42; font-size: 10px; }
+.computer-power:hover { background: #d5d1c3; }
+.computer-power .icon { width: 13px; height: 13px; }
+.computer-screen { display: flex; flex-direction: column; height: min(630px, calc(100dvh - 245px)); min-height: 330px; min-width: 0; position: relative; overflow: hidden; border: 3px solid; border-color: #545349 #eeebde #eeebde #545349; border-radius: 3px; background: #008080; box-shadow: inset 0 0 0 1px #111; }
+.computer-pixel-icon { width: 32px; height: 32px; flex-shrink: 0; image-rendering: pixelated; }
+.computer-system-mark { display: grid; grid-template-columns: repeat(2, 1fr); width: 23px; height: 23px; gap: 2px; flex-shrink: 0; transform: skewY(-10deg); filter: drop-shadow(1px 1px 0 #222); }
+.computer-system-mark i:nth-child(1) { background: #f66b45; }
+.computer-system-mark i:nth-child(2) { background: #57c258; }
+.computer-system-mark i:nth-child(3) { background: #4ba9df; }
+.computer-system-mark i:nth-child(4) { background: #f1ca4c; }
+.computer-desktop { flex: 1; min-height: 0; min-width: 0; position: relative; display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 20px; padding: 16px 18px; overflow: auto; background: #008080; scrollbar-color: #c0c0c0 #008080; }
+.computer-desktop-apps { display: flex; align-items: center; flex-direction: column; gap: 9px; position: relative; z-index: 1; }
+.computer-desktop-app { display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 7px; width: 94px; min-height: 79px; padding: 5px 3px; text-align: center; color: white; background: transparent; border: 1px solid transparent; }
+.computer-desktop-app .computer-pixel-icon { width: 43px; height: 43px; filter: drop-shadow(1px 2px 0 #004b4b); }
+.computer-desktop-app > strong { display: block; font-size: 11px; font-weight: 400; line-height: 1.4; text-shadow: 1px 1px #004b4b; }
+.computer-desktop-app:hover, .computer-desktop-app:focus-visible { border-color: #f2ffff99; background: #00008065; outline: none !important; }
+.computer-desktop-app:focus-visible > strong { background: #000080; }
+.computer-wallpaper-mark { position: absolute; right: 44px; top: 38px; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 13px; width: 320px; opacity: .38; color: #dbffff; pointer-events: none; user-select: none; }
+.computer-wallpaper-mark .computer-system-mark { width: 58px; height: 58px; gap: 5px; }
+.computer-wallpaper-mark > span { display: flex; align-items: baseline; gap: 5px; font-size: 35px; letter-spacing: -1.7px; font-weight: 700; text-shadow: 2px 2px #003f3f; }
+.computer-wallpaper-mark > span strong { font-size: 43px; font-weight: 400; }
+.computer-wallpaper-mark > small { width: 100%; text-align: right; font-size: 12px; }
+.computer-desktop-note { align-self: end; justify-self: end; width: min(360px, 100%); z-index: 1; margin: 120px 0 5px; background: #c0c0c0; padding: 3px; border: 2px solid; border-color: #fff #404040 #404040 #fff; box-shadow: 3px 3px #003f3f90; }
+.computer-desktop-note > header { display: flex; align-items: center; gap: 5px; padding: 3px 5px; background: #808080; color: white; }
+.computer-desktop-note > header .computer-pixel-icon { width: 19px; height: 19px; }
+.computer-desktop-note > header strong { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.computer-desktop-note > div { padding: 12px; font-size: 12px; line-height: 1.7; }
+.computer-desktop-note p { margin: 0 0 8px; }
+.computer-inline-link { padding: 0; background: transparent; color: #000080; font-weight: bold; text-decoration: underline; }
+.computer-next-project { padding: 8px; margin: 9px 0 10px !important; background: #d2d2d2; border: 1px solid; border-color: #808080 #fff #fff #808080; }
+.computer-next-project > span { display: block; color: #555; text-transform: uppercase; font-size: 9px; letter-spacing: .5px; }
+.computer-next-project > strong { display: block; font-size: 12px; line-height: 1.6; }
+.computer-next-project small { display: block; color: #444; font-size: 10px; line-height: 1.6; }
+.computer-desktop-note > div > small { font-size: 10px; color: #333; }
+.computer-desktop-note > footer { display: flex; align-items: center; gap: 6px; min-height: 22px; padding: 3px 5px; border: 1px solid; border-color: #808080 #fff #fff #808080; font-size: 9px; color: #444; }
+.computer-desktop-note > footer .icon { width: 12px; height: 12px; }
+.computer-classic-button, .computer-start, .computer-task-app, .computer-task-home, .computer-window-controls button { background: #c0c0c0; border: 2px solid; border-color: #fff #404040 #404040 #fff; border-radius: 0; box-shadow: inset -1px -1px #808080; color: #111; }
+.computer-classic-button { min-height: 31px; padding: 6px 13px; font-size: 11px; }
+.computer-classic-button:hover { background: #cdcdcd; }
+.computer-classic-button:active, .computer-start.active, .computer-start:active, .computer-task-app.active, .computer-task-app:active, .computer-task-home:active, .computer-window-controls button:active { border-color: #404040 #fff #fff #404040; box-shadow: inset 1px 1px #808080; }
+.computer-default-button { outline: 1px solid black; outline-offset: 1px; }
+.computer-taskbar { display: flex; align-items: center; position: relative; gap: 6px; flex-shrink: 0; padding: 4px 5px 3px; min-height: 39px; min-width: 0; background: #c0c0c0; border-top: 2px solid #fff; box-shadow: 0 -1px #808080; }
+.computer-start { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 3px 6px; min-height: 30px; font-size: 12px; flex-shrink: 0; }
+.computer-start .computer-system-mark { width: 19px; height: 19px; }
+.computer-task-divider { height: 27px; width: 3px; border-left: 1px solid #808080; border-right: 1px solid #fff; flex-shrink: 0; }
+.computer-pinned-apps { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1; }
+.computer-task-app { display: flex; align-items: center; gap: 5px; min-height: 30px; min-width: 0; width: min(140px, 26%); padding: 3px 6px; font-size: 11px; }
+.computer-task-app .computer-pixel-icon { width: 20px; height: 20px; }
+.computer-task-app > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.computer-task-app.active { background: repeating-conic-gradient(#d5d5d5 0% 25%, #c0c0c0 0% 50%) 50% / 2px 2px; font-weight: bold; }
+.computer-task-home { display: grid; place-items: center; min-height: 30px; width: 30px; padding: 1px; flex-shrink: 0; }
+.computer-task-home .computer-pixel-icon { width: 21px; height: 21px; }
+.computer-clock { display: flex; align-items: center; gap: 5px; padding: 5px 7px; margin-left: auto; min-height: 30px; border: 1px solid; border-color: #808080 #fff #fff #808080; color: #222; flex-shrink: 0; }
+.computer-clock > .icon { width: 14px; height: 14px; color: #3b3b3b; }
+.computer-clock strong { font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.computer-clock small { font-size: 9px; color: #555; }
+.computer-start-menu { position: absolute; left: 4px; bottom: calc(100% - 1px); z-index: 10; display: flex; width: min(280px, calc(100vw - 75px)); max-height: min(400px, calc(100dvh - 250px)); overflow: auto; padding: 3px; background: #c0c0c0; border: 2px solid; border-color: white #404040 #404040 white; box-shadow: 3px 3px #00303080; }
+.computer-start-brand { width: 28px; flex-shrink: 0; color: #bbb; font-size: 18px; padding: 9px 3px; writing-mode: vertical-rl; transform: rotate(180deg); background: #808080; }
+.computer-start-brand strong { color: #eee; }
+.computer-start-items { flex: 1; min-width: 0; }
+.computer-start-user { display: flex; align-items: center; gap: 7px; padding: 7px 8px; color: #333; }
+.computer-start-user span { min-width: 0; font-size: 10px; overflow-wrap: anywhere; }
+.computer-start-user small { display: block; color: #666; font-size: 9px; margin-top: 3px; }
+.computer-start-items > button { display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 5px 10px; width: 100%; color: #222; background: transparent; text-align: left; font-size: 11px; }
+.computer-start-items > button:hover, .computer-start-items > button:focus-visible { background: #000080; color: #fff; outline: none; }
+.computer-start-items > button .computer-pixel-icon { width: 30px; height: 30px; }
+.computer-start-items > button > strong { font-weight: 400; }
+.computer-start-items > button > span:last-child { margin-left: auto; font-size: 20px; }
+.computer-start-items > hr { border: 0; border-top: 1px solid #808080; border-bottom: 1px solid white; margin: 3px 4px; }
+.computer-monitor-foot { display: flex; align-items: center; gap: 8px; padding: 13px 6px 1px; color: #656156; font-size: 9px; line-height: 1.5; }
+.computer-monitor-foot > span:last-child { margin-left: auto; white-space: nowrap; }
+.computer-monitor-foot kbd { color: #605e52; background: transparent; border-color: #999589; border-radius: 2px; min-width: 22px; height: 17px; font-size: 9px; }
+.computer-power-led { width: 7px; height: 7px; border: 1px solid #526332; border-radius: 50%; background: #a0d154; box-shadow: 0 0 5px #bde967, inset 1px 1px #e6ffb1; flex-shrink: 0; }
+.computer-window { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; margin: 12px 14px; padding: 3px; background: #c0c0c0; border: 2px solid; border-color: white #404040 #404040 white; box-shadow: 3px 3px #003f3f70; }
+.computer-window-maximized { margin: 2px; box-shadow: none; }
+.computer-window-bar { display: flex; align-items: center; gap: 5px; padding: 3px 4px; flex-shrink: 0; background: linear-gradient(90deg, #000080, #1084c9); color: white; min-height: 28px; }
+.computer-window-symbol { display: flex; align-items: center; }
+.computer-window-symbol .computer-pixel-icon { width: 21px; height: 21px; }
+.computer-window-bar > strong { flex: 1; min-width: 0; margin: 0; color: white; font-size: 11px; line-height: 1.4; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 700; }
+.computer-window-controls { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.computer-window-controls button { display: grid; place-items: center; width: 22px; height: 21px; padding: 1px; }
+.computer-window-controls button:last-child { margin-left: 2px; }
+.computer-window-controls .icon { width: 15px; height: 15px; stroke-width: 2.5; }
+.computer-minimize-symbol { width: 9px; height: 3px; background: #111; align-self: end; margin-bottom: 3px; }
+.computer-maximize-symbol { display: block; width: 11px; height: 11px; border: 1px solid #111; border-top: 3px solid #111; }
+.computer-maximize-symbol.restore { width: 9px; height: 9px; box-shadow: 2px -2px #c0c0c0, 3px -3px #111; }
+.computer-window-menu { display: flex; align-items: center; gap: 1px; padding: 2px 3px; flex-shrink: 0; border-bottom: 1px solid #808080; }
+.computer-window-menu button { min-height: 27px; padding: 4px 7px; background: transparent; color: #222; font-size: 11px; }
+.computer-window-menu button:hover { background: #000080; color: white; }
+.computer-window-content { flex: 1; min-height: 0; min-width: 0; padding: 19px; overflow: auto; overscroll-behavior: contain; border: 2px solid; border-color: #808080 white white #808080; background: #1c2c24; color: var(--text); scrollbar-color: #c0c0c0 #333; }
 .computer-window-content .store-metric strong { font-size: 22px; }
-.work-puzzle { padding: 19px; border: 1px solid #9fc2b24a; border-radius: 11px; background: #a0cbd109; margin: 0 0 22px; }
-.puzzle-intro-symbol, .puzzle-results-symbol { display: grid; place-items: center; width: 47px; height: 47px; margin-bottom: 17px; border: 1px solid #a6cbd14a; border-radius: 12px; color: #b1d4d4; background: #a6cbd10b; }
-.puzzle-intro-symbol .icon, .puzzle-results-symbol .icon { width: 28px; height: 28px; }
-.puzzle-intro h3 { font-size: 23px; font-weight: 550; letter-spacing: -.5px; line-height: 1.4; margin: 10px 0 12px; color: #e2efdc; }
-.puzzle-intro > p:not(.puzzle-footnote):not(.store-eligibility) { color: #a9bca1; font-size: 12px; line-height: 1.9; margin: 0; max-width: 590px; }
-.puzzle-project { padding: 13px 14px; margin-top: 17px; border: 1px solid #9fb87532; border-radius: 7px; background: #d7ed8d04; }
-.puzzle-project > span { display: flex; align-items: center; gap: 6px; color: #9db78c; font-size: 9px; letter-spacing: .6px; }
-.puzzle-project > span .icon { width: 13px; height: 13px; }
-.puzzle-project strong { display: block; font-size: 13px; font-weight: 550; line-height: 1.6; color: #d8e8c4; margin-top: 8px; }
-.puzzle-project small { display: block; font-size: 11px; color: #93ac7e; margin-top: 4px; }
-.puzzle-session-facts { display: flex; flex-wrap: wrap; gap: 8px 15px; margin: 17px 0; color: #abc3a1; font-size: 11px; }
-.puzzle-session-facts > span { display: inline-flex; align-items: center; gap: 6px; }
-.puzzle-session-facts .icon { width: 14px; height: 14px; }
-.puzzle-footnote { font-size: 11px; line-height: 1.85; color: #95ae86; margin: 13px 0 0; }
+.computer-window-status { display: flex; align-items: center; justify-content: space-between; gap: 9px; min-height: 22px; flex-shrink: 0; margin-top: 3px; color: #444; font-size: 9px; }
+.computer-window-status > span { padding: 3px 5px; min-width: 0; border: 1px solid; border-color: #808080 #fff #fff #808080; }
+.computer-window-status > span:first-child { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.computer-window-status > span:nth-child(2) { flex-shrink: 0; }
+.computer-window-status > i { width: 11px; height: 11px; flex-shrink: 0; background: repeating-linear-gradient(135deg, #fff 0 1px, #808080 1px 2px, transparent 2px 4px); clip-path: polygon(100% 0, 100% 100%, 0 100%); align-self: end; }
+/* The logon dialog belongs to the local, fictional computer. */
+.computer-login-screen { flex: 1; min-height: 0; padding: 25px; position: relative; display: flex; align-items: center; justify-content: center; overflow: auto; background: #008080; }
+.computer-login-wallpaper { position: absolute; top: 28px; left: 35px; display: flex; align-items: center; gap: 13px; color: #d5f9f9; opacity: .3; pointer-events: none; }
+.computer-login-wallpaper .computer-system-mark { width: 43px; height: 43px; gap: 4px; }
+.computer-login-wallpaper > span { font-size: 27px; font-weight: 600; letter-spacing: -.8px; }
+.computer-login-wallpaper strong { font-weight: 400; }
+.computer-login-dialog { z-index: 1; width: min(450px, 100%); margin: auto 0; padding: 3px; border: 2px solid; border-color: #fff #404040 #404040 #fff; background: #c0c0c0; box-shadow: 4px 4px #003f3f75; }
+.computer-login-title { display: flex; align-items: center; gap: 5px; background: #000080; color: #fff; min-height: 27px; padding: 3px 5px; }
+.computer-login-title .computer-pixel-icon { width: 20px; height: 20px; }
+.computer-login-title strong { font-size: 11px; font-weight: 700; }
+.computer-login-body { padding: 18px 19px 12px; }
+.computer-login-welcome { display: flex; align-items: center; gap: 15px; margin: 0 0 18px; }
+.computer-login-welcome .computer-pixel-icon { width: 45px; height: 45px; }
+.computer-login-welcome p { margin: 0; font-size: 12px; line-height: 1.7; }
+.computer-login-row { display: grid; grid-template-columns: 115px minmax(0, 1fr); align-items: center; gap: 10px; margin-top: 11px; color: #222; font-size: 11px; }
+.computer-monitor .computer-login-row input { min-width: 0; width: 100%; height: 32px; padding: 5px 7px; background: white; color: black; border: 2px solid; border-color: #808080 white white #808080; border-radius: 0; font-size: 12px; }
+.computer-monitor .computer-login-row input[readonly] { background: #d3d3d3; color: #444; }
+.computer-login-help { font-size: 10px; line-height: 1.6; color: #555; margin: 10px 0 16px; }
+.computer-login-error { display: flex; align-items: center; gap: 7px; border: 1px solid #a95c41; background: #efd4bf; padding: 8px; color: #6f2112; font-size: 11px; line-height: 1.5; }
+.computer-login-error .icon { width: 16px; height: 16px; }
+.computer-login-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
+.computer-password-reset { display: block; padding: 7px 0; margin-top: 9px; color: #000080; background: transparent; text-decoration: underline; font-size: 10px; }
+.computer-login-dialog > footer { padding: 5px 8px; margin-top: 3px; border: 1px solid; border-color: #808080 white white #808080; color: #555; font-size: 9px; line-height: 1.5; }
+/* Developing is a terminal. Numbers and commands both work as real inputs. */
+.computer-terminal-content { padding: 0; overflow: hidden; background: #080d09; }
+.development-terminal { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; background: #080d09; color: #afe7a5; font-family: "Lucida Console", "Courier New", monospace; font-size: 12px; line-height: 1.7; }
+.development-terminal button, .development-terminal input { font-family: inherit; }
+.development-terminal button:focus-visible, .development-terminal input:focus-visible { outline: 1px dashed #d2f9c8; outline-offset: -3px; }
+.development-terminal ::selection { background: #acd99a; color: #080d09; }
+.terminal-boot { padding: 16px 18px 9px; flex-shrink: 0; color: #b7d0b1; }
+.terminal-boot > strong { color: #ddf7d3; font-size: 12px; font-weight: 400; }
+.terminal-boot > p { margin: 1px 0 0; color: #789b72; font-size: 11px; line-height: 1.7; }
+.terminal-boot b { color: #b8e2a7; font-weight: 400; }
+.terminal-shortcuts { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; flex-shrink: 0; padding: 0 18px 12px; border-bottom: 1px dashed #395438; }
+.terminal-shortcuts button { padding: 3px 9px; min-height: 29px; border: 1px solid #395438; border-radius: 0; background: #102011; color: #9ebf92; font-size: 11px; }
+.terminal-shortcuts button:hover, .terminal-shortcuts button.active { background: #b4dda1; border-color: #b4dda1; color: #0a1b0a; }
+.terminal-output-area { flex: 1; min-height: 0; min-width: 0; padding: 16px 18px 10px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #5c8552 #0b130b; }
+.terminal-history { margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px dashed #2d482c; white-space: pre-wrap; overflow-wrap: anywhere; }
+.terminal-history p { margin: 0 0 6px; font-size: 11px; line-height: 1.7; }
+.terminal-command-echo { color: #d0ebc1; }
+.terminal-command-echo > span { color: #93bd83; }
+.terminal-output { color: #94b887; }
+.terminal-command-form { display: flex; align-items: center; gap: 5px; flex-shrink: 0; min-height: 47px; padding: 7px 13px; margin: 0 5px; border-top: 1px solid #41643a; color: #caf0b5; background: #102011; }
+.terminal-command-form label { font-size: 11px; flex-shrink: 0; white-space: nowrap; }
+.computer-monitor .terminal-command-form input { min-width: 0; flex: 1; width: 100%; min-height: 31px; padding: 3px 5px; color: #e1fdd6; font-size: 12px; border: 0; border-bottom: 1px solid #486141; border-radius: 0; background: transparent; caret-color: #d7ff9b; }
+.computer-monitor .terminal-command-form input::placeholder { color: #65805d; }
+.terminal-command-form button { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 9px; min-height: 31px; border: 1px solid #55744a; border-radius: 0; font-size: 13px; background: #162c15; color: #bceaa6; }
+.terminal-command-form button:hover { background: #c2eca9; color: #11210f; }
+.terminal-command-form button > span { font-size: 10px; }
+.terminal-input-hint { padding: 4px 18px 7px; margin: 0; color: #617b58; font-size: 9px; flex-shrink: 0; }
+.development-terminal .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.work-puzzle { margin: 0; padding: 0; background: none; border: 0; border-radius: 0; }
+.work-puzzle .section-label { color: #88bb77; font-size: 10px; font-weight: 400; letter-spacing: .5px; }
+.puzzle-intro h3, .puzzle-results h3 { font-size: 18px; line-height: 1.6; margin: 9px 0 11px; color: #d8f7c8; font-weight: 400; letter-spacing: -.4px; }
+.puzzle-intro > p:not(.puzzle-footnote):not(.store-eligibility), .puzzle-results > p:not(.puzzle-footnote) { font-size: 12px; line-height: 1.9; margin: 0; color: #93b486; }
+.puzzle-project { margin: 16px 0 0; padding: 9px 11px; border-left: 2px solid #769f62; background: #152315; }
+.puzzle-project > span { display: block; color: #6f9961; font-size: 9px; letter-spacing: .7px; }
+.puzzle-project strong { display: block; color: #c0e6a9; font-size: 13px; font-weight: 400; margin: 3px 0; }
+.puzzle-project small { display: block; font-size: 10px; color: #839f75; }
+.puzzle-session-facts { display: flex; flex-wrap: wrap; gap: 5px 18px; margin: 15px 0; font-size: 10px; color: #80ac6d; }
+.puzzle-footnote { margin: 12px 0 0; font-size: 10px; line-height: 1.9; color: #74966a; }
+.work-puzzle .primary-button { min-height: 40px; border: 1px solid #82b572; border-radius: 0; background: #adcf97; color: #0e220c; padding: 10px 13px; font-size: 12px; font-weight: 400; }
+.work-puzzle .primary-button:hover:not(:disabled) { background: #c4e9ad; transform: none; }
+.work-puzzle .store-eligibility { display: block; color: #d8bb84; margin: 12px 0; font-size: 11px; line-height: 1.9; }
 .puzzle-session-head { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
 .puzzle-session-head > div { min-width: 0; flex: 1; }
-.puzzle-session-head h3 { font-size: 18px; font-weight: 550; letter-spacing: -.3px; line-height: 1.5; color: #dfedce; margin: 8px 0 4px; }
-.puzzle-session-head small { color: #9ab385; font-size: 11px; }
-.puzzle-session-count { padding: 7px 10px; border: 1px solid #a7c8894d; border-radius: 7px; background: #d7ed8d07; color: #c4dfa4; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.puzzle-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin: 19px 0; padding: 0; list-style: none; }
-.puzzle-step { display: flex; align-items: center; gap: 7px; padding: 8px; border: 1px solid #6f874736; border-radius: 6px; color: #768f6b; background: #10271c16; }
-.puzzle-step > span { display: grid; place-items: center; width: 20px; height: 20px; flex-shrink: 0; border: 1px solid #78934e38; border-radius: 5px; font-size: 10px; }
-.puzzle-step .icon { width: 12px; height: 12px; }
+.puzzle-session-head h3 { margin: 5px 0 3px; color: #d3eec0; font-size: 16px; line-height: 1.5; font-weight: 400; }
+.puzzle-session-head small { color: #729463; font-size: 10px; }
+.puzzle-session-count { color: #d2ebc3; border: 1px solid #426039; padding: 4px 8px; font-size: 13px; }
+.puzzle-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; list-style: none; margin: 16px 0; padding: 0; }
+.puzzle-step { display: flex; align-items: center; gap: 6px; padding: 6px; color: #52714a; border-bottom: 1px dashed #395233; font-size: 11px; }
+.puzzle-step > span { font-size: 11px; }
 .puzzle-step small { font-size: 9px; }
-.puzzle-step.current { border-color: #a6cbd181; background: #a6cbd110; color: #aacecf; }
-.puzzle-step.current > span { background: #a6cbd1; border-color: #a6cbd1; color: #27423e; }
-.puzzle-step.complete { border-color: #bddb7b52; color: #c1d89d; background: #d7ed8d09; }
-.puzzle-step.complete > span { border-color: #bad18850; }
-.puzzle-feedback { display: flex; align-items: flex-start; gap: 9px; margin: 16px 0; padding: 12px 13px; border: 1px solid #a9c77a4c; border-radius: 8px; color: #bcd395; background: #d7ed8d08; }
-.puzzle-feedback > .icon { width: 17px; height: 17px; margin-top: 2px; }
-.puzzle-feedback strong { color: #d1e5af; font-size: 12px; font-weight: 550; }
-.puzzle-feedback p { margin: 5px 0 0; color: #adc594; font-size: 11px; line-height: 1.85; }
-.puzzle-feedback.incorrect { border-color: #d0ad794e; background: #d4ae6a09; color: #d1b790; }
-.puzzle-feedback.incorrect strong { color: #e1c69f; }
-.puzzle-feedback.incorrect p { color: #c1b491; }
-.puzzle-question-label { color: #95b6b4; letter-spacing: 1px; font-size: 10px; }
-.puzzle-question h3 { color: #e0edde; font-size: 21px; font-weight: 550; letter-spacing: -.4px; line-height: 1.4; margin: 10px 0 13px; }
-.puzzle-question > p:not(.puzzle-footnote) { color: #b0c3a8; font-size: 13px; line-height: 1.85; margin: 0; white-space: pre-line; }
-.puzzle-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 18px; }
-.puzzle-choice { display: flex; align-items: center; gap: 12px; text-align: left; padding: 13px; border: 1px solid #8fa7704a; border-radius: 8px; background: #d7ed8d04; color: #c0d2b0; transition: border-color .15s, background .15s; }
-.puzzle-choice:hover:not(:disabled) { border-color: #bbd88c9e; background: #d7ed8d10; }
-.puzzle-choice > span { display: grid; place-items: center; width: 27px; height: 27px; flex-shrink: 0; background: #d7ed8d0c; border: 1px solid #d7ed8d34; border-radius: 6px; font-size: 11px; color: #b8ce9a; }
-.puzzle-choice > strong { flex: 1; min-width: 0; font-size: 12px; font-weight: 450; line-height: 1.8; }
-.puzzle-choice > .icon { width: 15px; height: 15px; color: #9fb984; }
-.puzzle-results { padding: 11px 0 2px; }
-.puzzle-results-symbol { background: #d7ed8d0c; border-color: #d7ed8d4f; color: #c2dca0; }
-.puzzle-results h3 { color: #e2efdc; font-size: 23px; font-weight: 550; line-height: 1.4; letter-spacing: -.5px; margin: 12px 0; }
-.puzzle-results > p:not(.puzzle-footnote) { color: #a7bc98; font-size: 12px; line-height: 1.85; }
-.puzzle-result-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 18px 0; }
-.puzzle-result-metrics > div { padding: 14px; border: 1px solid #9bb86a42; border-radius: 8px; background: #d7ed8d05; }
-.puzzle-result-metrics span { display: block; color: #a1b88d; font-size: 11px; line-height: 1.6; }
-.puzzle-result-metrics strong { display: block; font-size: 24px; font-weight: 550; color: #ddedc3; margin-top: 9px; }
+.puzzle-step.complete { color: #96c47b; border-bottom-color: #7ba36d; }
+.puzzle-step.current { color: #d7eec2; border-bottom-color: #c3e2a7; background: #182e15; }
+.puzzle-feedback { display: flex; align-items: flex-start; gap: 9px; margin: 15px 0; padding: 10px 11px; color: #a8d48f; border-left: 2px solid #8bb36f; background: #152714; }
+.puzzle-feedback > span { font-size: 10px; flex-shrink: 0; margin-top: 2px; }
+.puzzle-feedback strong { font-size: 11px; font-weight: 400; color: #bddfa7; }
+.puzzle-feedback p { margin: 4px 0 0; color: #8aab76; font-size: 11px; line-height: 1.9; }
+.puzzle-feedback.incorrect { color: #ddbb83; border-color: #b39b6f; background: #292419; }
+.puzzle-feedback.incorrect strong { color: #e3c58d; }
+.puzzle-feedback.incorrect p { color: #b8a47e; }
+.puzzle-question-label { color: #769c65; font-size: 10px; letter-spacing: .7px; }
+.puzzle-question h3 { margin: 8px 0 11px; color: #d3ebc2; font-size: 18px; line-height: 1.5; font-weight: 400; }
+.puzzle-question > p:not(.puzzle-footnote) { margin: 0; color: #a2bb95; font-size: 12px; line-height: 1.9; white-space: pre-line; }
+.puzzle-choices { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 16px; }
+.puzzle-choice { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 11px; color: #a0bd91; background: #0e190e; border: 1px solid #304e2b; border-radius: 0; text-align: left; }
+.puzzle-choice:hover:not(:disabled) { color: #d6f4c1; background: #1f371a; border-color: #84ae6b; }
+.puzzle-choice > span:first-child { color: #bad9a4; flex-shrink: 0; font-size: 12px; }
+.puzzle-choice > strong { font-size: 12px; line-height: 1.8; font-weight: 400; min-width: 0; flex: 1; }
+.puzzle-choice-arrow { color: #597d4b; font-size: 15px; }
+.puzzle-results { padding: 8px 0 0; }
+.puzzle-result-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; margin: 15px 0; }
+.puzzle-result-metrics > div { padding: 9px 11px; border: 1px dashed #47633b; }
+.puzzle-result-metrics span { display: block; color: #799769; font-size: 10px; }
+.puzzle-result-metrics strong { display: block; font-size: 22px; font-weight: 400; color: #cce6b8; margin-top: 3px; }
+.terminal-section-command { color: #d7edc6; padding-bottom: 12px; border-bottom: 1px dashed #395438; margin-bottom: 16px; font-size: 11px; }
+.terminal-routine { color: #a9c498; }
+.terminal-routine .in-world-tabs { background: #112210; border: 1px solid #395332; border-radius: 0; padding: 2px; }
+.terminal-routine .in-world-tabs button { border-radius: 0; color: #a9c299; font-size: 11px; }
+.terminal-routine .in-world-tabs button.active { background: #2e4826; border-color: #728e59; color: #d2ecc0; }
+.terminal-routine .station-stat, .terminal-routine .project-card { border-radius: 0; border-color: #3d5532; background: #132110; }
+.terminal-routine .station-stat strong { color: #c7e6b4; font-size: 21px; }
+.terminal-routine .concept-note { border-radius: 0; border: 1px dashed #3f5732; color: #8eaa7c; background: #10200d; font-size: 11px; }
+.terminal-routine .concept-note strong, .terminal-routine .subheading, .terminal-routine .allocation-label strong { color: #c2deb0; }
+.terminal-routine .muted { color: #859f74; font-size: 11px; }
+.terminal-routine .subheading { font-weight: 400; }
+.terminal-routine .primary-button, .terminal-routine .secondary-button { border-radius: 0; border: 1px solid #536e42; background: #284422; color: #bedea8; font-size: 11px; font-weight: 400; }
+.terminal-routine .allocation-icon { border-radius: 0; }
 @media (max-width: 1020px) {
-  .computer-task-app > span { display: none; }
-  .computer-task-app { padding-inline: 11px; }
-  .computer-session-indicator { font-size: 9px; }
+  .computer-task-app { flex: 1; width: auto; }
+  .computer-task-app > span { font-size: 10px; }
 }
 @media (max-width: 760px) {
-  .station-panel.computer-panel { width: auto; left: 10px !important; right: 10px !important; max-height: min(74dvh, calc(100dvh - 149px)); }
-  .computer-frame { padding: 5px; border-radius: 13px; }
-  .computer-screen { height: min(calc(74dvh - 82px), calc(100dvh - 230px)); min-height: 210px; border-radius: 8px; }
-  .computer-bezel { padding: 4px 7px 8px; gap: 8px; }
-  .computer-bezel > span { font-size: 7px; letter-spacing: .8px; }
-  .computer-bezel > span .icon { width: 12px; height: 12px; }
-  .computer-power { padding: 4px 6px; font-size: 9px; min-height: 31px; min-width: 31px; }
-  .computer-monitor-foot { padding: 8px 7px 2px; font-size: 8px; }
-  .computer-desktop { padding: 17px; }
-  .computer-desktop-top { gap: 10px; }
-  .computer-os-label { font-size: 17px; gap: 6px; }
-  .computer-os-label > span { display: none; }
-  .computer-os-label .icon { width: 22px; height: 22px; }
-  .computer-user { font-size: 10px; gap: 6px; }
-  .computer-user small { font-size: 8px; }
-  .computer-desktop-heading { margin: 25px 0 20px; }
-  .computer-desktop-heading > span { font-size: 8px; letter-spacing: 1.1px; }
-  .computer-desktop-heading h3 { max-width: 100%; font-size: 25px; margin-top: 10px; }
-  .computer-desktop-heading p { font-size: 11px; }
-  .computer-desktop-apps { gap: 7px; }
-  .computer-desktop-app { align-items: center; padding: 13px 7px; min-height: 115px; border-radius: 9px; text-align: center; }
-  .computer-app-symbol { width: 40px; height: 40px; margin-bottom: 10px; border-radius: 9px; }
-  .computer-app-symbol .icon { width: 25px; height: 25px; }
-  .computer-desktop-app > strong { font-size: 11px; }
-  .computer-desktop-app > small { font-size: 9px; margin-top: 5px; line-height: 1.65; }
-  .computer-desktop-notes { gap: 11px; margin-top: 19px; }
-  .computer-desktop-notes article > span { font-size: 8px; }
-  .computer-desktop-notes strong { font-size: 11px; }
-  .computer-desktop-notes small { font-size: 10px; }
-  .computer-taskbar { gap: 5px; padding: 6px 7px; }
-  .computer-start { padding-inline: 8px; font-size: 10px; min-height: 32px; }
-  .computer-start .icon { width: 16px; height: 16px; }
-  .computer-pinned-apps { gap: 0; }
-  .computer-task-app { padding: 8px; min-height: 32px; }
-  .computer-task-app .icon { width: 16px; height: 16px; }
-  .computer-session-indicator { display: none; }
-  .computer-clock { margin-left: auto; padding-left: 4px; min-width: 44px; }
+  .station-panel.computer-panel, .station-panel.computer-panel.computer-maximized { width: auto; left: 10px !important; right: 10px !important; max-height: min(74dvh, calc(100dvh - 149px)); }
+  .computer-frame { padding: 7px; border-radius: 12px; }
+  .computer-screen { height: min(calc(74dvh - 86px), calc(100dvh - 230px)); min-height: 210px; border-width: 2px; }
+  .computer-bezel { padding: 2px 3px 7px; gap: 5px; }
+  .computer-bezel > span { font-size: 9px; letter-spacing: 1px; }
+  .computer-bezel b { display: none; }
+  .computer-power { min-height: 36px; font-size: 9px; padding: 5px; }
+  .computer-monitor-foot { padding: 8px 3px 0; gap: 5px; font-size: 8px; }
+  .computer-monitor-foot > span:nth-child(2) { max-width: 72%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .computer-desktop { padding: 12px 8px; grid-template-columns: 85px minmax(0, 1fr); gap: 7px; }
+  .computer-desktop-apps { gap: 4px; }
+  .computer-desktop-app { width: 83px; min-height: 73px; padding: 4px 2px; }
+  .computer-desktop-app .computer-pixel-icon { width: 39px; height: 39px; }
+  .computer-desktop-app > strong { font-size: 10px; }
+  .computer-desktop-note { align-self: start; margin: 85px 0 6px; }
+  .computer-desktop-note > header { padding-inline: 3px; }
+  .computer-desktop-note > header strong { font-size: 9px; }
+  .computer-desktop-note > div { padding: 9px; font-size: 10px; }
+  .computer-desktop-note > footer { font-size: 8px; gap: 4px; line-height: 1.5; }
+  .computer-next-project { padding: 6px; }
+  .computer-next-project > strong { font-size: 11px; }
+  .computer-next-project small { font-size: 9px; }
+  .computer-wallpaper-mark { top: 21px; right: 13px; width: 186px; gap: 9px; }
+  .computer-wallpaper-mark .computer-system-mark { width: 35px; height: 35px; gap: 3px; }
+  .computer-wallpaper-mark > span { font-size: 23px; letter-spacing: -1.4px; }
+  .computer-wallpaper-mark > span strong { font-size: 29px; }
+  .computer-wallpaper-mark > small { font-size: 9px; }
+  .computer-taskbar { min-height: 47px; gap: 4px; padding: 3px; }
+  .computer-start { min-height: 39px; padding: 4px 5px; font-size: 10px; gap: 4px; }
+  .computer-start .computer-system-mark { width: 17px; height: 17px; }
+  .computer-pinned-apps { gap: 3px; }
+  .computer-task-app { min-height: 39px; min-width: 32px; flex: 1; justify-content: center; padding: 3px; }
+  .computer-task-app .computer-pixel-icon { width: 23px; height: 23px; }
+  .computer-task-app > span { display: none; }
+  .computer-task-home { display: none; }
+  .computer-task-divider { height: 36px; }
+  .computer-clock { padding: 5px; min-height: 39px; gap: 4px; }
   .computer-clock strong { font-size: 10px; }
-  .computer-clock small { font-size: 8px; }
-  .computer-window-bar { padding: 11px 13px; gap: 8px; }
-  .computer-window-bar strong { font-size: 13px; }
-  .computer-window-bar small { font-size: 10px; }
-  .computer-window-symbol { width: 29px; height: 29px; }
-  .computer-window-content { padding: 15px; }
+  .computer-clock small, .computer-clock .icon { display: none; }
+  .computer-start-menu { max-height: min(375px, calc(74dvh - 152px)); }
+  .computer-window { margin: 5px; padding: 2px; }
+  .computer-window-maximized { margin: 1px; }
+  .computer-window-bar { min-height: 36px; padding: 3px; gap: 3px; }
+  .computer-window-bar > strong { font-size: 9px; }
+  .computer-window-symbol .computer-pixel-icon { width: 19px; height: 19px; }
+  .computer-window-controls { gap: 2px; }
+  .computer-window-controls button { width: 31px; height: 31px; }
+  .computer-window-controls button:last-child { margin-left: 0; }
+  .computer-window-menu { overflow-x: auto; white-space: nowrap; padding: 0; }
+  .computer-window-menu button { min-height: 34px; padding: 5px; font-size: 9px; }
+  .computer-window-content { padding: 12px; }
   .computer-window-content .store-metric strong { font-size: 17px; }
-  .work-puzzle { padding: 15px; margin-bottom: 18px; }
-  .puzzle-intro h3, .puzzle-results h3 { font-size: 21px; }
-  .puzzle-session-head h3 { font-size: 16px; }
+  .computer-window-status { font-size: 8px; min-height: 20px; gap: 4px; }
+  .computer-window-status > span { padding: 3px; }
+  .computer-window-status > span:nth-child(2) { display: none; }
+  .computer-login-screen { padding: 16px 9px; }
+  .computer-login-wallpaper { left: 14px; top: 13px; gap: 9px; }
+  .computer-login-wallpaper .computer-system-mark { width: 31px; height: 31px; }
+  .computer-login-wallpaper > span { font-size: 20px; }
+  .computer-login-body { padding: 13px 10px 10px; }
+  .computer-login-title strong { font-size: 10px; }
+  .computer-login-welcome { gap: 10px; margin-bottom: 12px; }
+  .computer-login-welcome .computer-pixel-icon { width: 36px; height: 36px; }
+  .computer-login-welcome p { font-size: 11px; }
+  .computer-login-row { grid-template-columns: 92px minmax(0, 1fr); gap: 7px; margin-top: 9px; font-size: 10px; }
+  .computer-monitor .computer-login-row input { min-height: 38px; height: 38px; font-size: 12px; }
+  .computer-login-help { font-size: 9px; }
+  .computer-classic-button { min-height: 40px; font-size: 10px; padding: 6px 10px; }
+  .computer-password-reset { min-height: 39px; font-size: 10px; }
+  .computer-login-dialog > footer { font-size: 8px; }
+  .computer-terminal-content { padding: 0; }
+  .terminal-boot { padding: 9px 10px 5px; }
+  .terminal-boot > strong { font-size: 10px; }
+  .terminal-boot > p { font-size: 9px; line-height: 1.7; }
+  .terminal-shortcuts { gap: 3px; padding: 0 10px 7px; }
+  .terminal-shortcuts button { min-height: 33px; padding: 3px 5px; font-size: 9px; }
+  .terminal-output-area { padding: 11px 10px 7px; }
+  .terminal-command-form { flex-wrap: wrap; gap: 2px 5px; padding: 5px 7px; margin: 0 2px; min-height: 63px; }
+  .terminal-command-form label { width: 100%; font-size: 9px; }
+  .computer-monitor .terminal-command-form input { min-height: 33px; font-size: 12px; }
+  .terminal-command-form button { min-height: 35px; min-width: 35px; font-size: 16px; padding: 3px 8px; }
+  .terminal-command-form button > span { font-size: 9px; }
+  .terminal-input-hint { padding: 3px 10px 5px; font-size: 8px; }
+  .puzzle-intro h3, .puzzle-question h3, .puzzle-results h3 { font-size: 16px; }
+  .puzzle-intro > p:not(.puzzle-footnote):not(.store-eligibility), .puzzle-question > p:not(.puzzle-footnote), .puzzle-results > p:not(.puzzle-footnote) { font-size: 11px; }
+  .puzzle-session-head h3 { font-size: 14px; }
   .puzzle-session-head .section-label { font-size: 9px; }
-  .puzzle-steps { gap: 5px; }
-  .puzzle-step { flex-direction: column; gap: 5px; padding: 7px 4px; }
+  .puzzle-session-head small { font-size: 9px; }
+  .puzzle-step { flex-direction: column; gap: 1px; padding: 5px 2px; }
   .puzzle-step small { font-size: 8px; }
-  .puzzle-question h3 { font-size: 19px; }
-  .puzzle-question > p:not(.puzzle-footnote) { font-size: 12px; }
-  .puzzle-choice { padding: 11px; gap: 9px; }
-  .puzzle-choices { grid-template-columns: 1fr; }
-  .puzzle-choice > strong { font-size: 12px; }
+  .puzzle-steps { gap: 4px; margin: 12px 0; }
+  .puzzle-feedback { gap: 6px; padding: 8px; }
+  .puzzle-feedback > span { font-size: 9px; }
+  .puzzle-feedback p { font-size: 10px; }
+  .puzzle-choice { gap: 7px; padding: 8px; min-height: 48px; }
+  .puzzle-choice > strong { font-size: 11px; }
   .puzzle-result-metrics { gap: 7px; }
-  .puzzle-result-metrics > div { padding: 11px; }
-  .puzzle-result-metrics strong { font-size: 22px; }
+  .puzzle-result-metrics > div { padding: 8px; }
+  .puzzle-result-metrics span { font-size: 9px; }
+  .puzzle-result-metrics strong { font-size: 20px; }
 }
 @media (max-width: 390px) {
   .computer-power > span { display: none; }
-  .computer-desktop-app > small { display: none; }
-  .computer-desktop-app { min-height: 95px; }
-  .computer-monitor-foot > span:nth-child(2) { max-width: 70%; }
-  .computer-desktop-apps { gap: 5px; }
-  .computer-desktop-app { padding-inline: 5px; }
-  .computer-desktop-app > strong { font-size: 10px; }
-  .computer-start { padding-inline: 6px; }
-  .computer-task-app { padding-inline: 7px; }
-  .puzzle-choice > .icon { display: none; }
+  .computer-power { min-width: 35px; }
+  .computer-desktop-note > footer .icon { display: none; }
+  .computer-wallpaper-mark { width: 152px; }
+  .computer-wallpaper-mark > span { font-size: 20px; }
+  .computer-wallpaper-mark .computer-system-mark { width: 29px; height: 29px; }
+  .computer-login-actions { gap: 6px; }
+  .computer-clock { padding: 4px; }
+  .computer-start { padding-inline: 4px; }
+  .puzzle-choice-arrow { display: none; }
 }
 @media (max-height: 620px) and (min-width: 761px) {
   .station-panel.computer-panel { top: 78px !important; max-height: calc(100dvh - 138px); }
   .computer-screen { height: calc(100dvh - 220px); min-height: 130px; }
-  .computer-desktop { padding: 17px 23px; }
-  .computer-desktop-heading { margin: 22px 0; }
+  .computer-desktop-note { margin-top: 12px; }
+  .computer-wallpaper-mark { opacity: .2; }
+  .terminal-boot { padding-top: 9px; }
+  .terminal-boot > p:last-child { display: none; }
 }

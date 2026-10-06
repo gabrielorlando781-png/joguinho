@@ -20,6 +20,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 SAVE_KEY = 'joguinho-save-v1'
+PC_PASSWORD = 'escritorio123'
 ARTIFACTS = Path(os.environ.get('GAME_TEST_ARTIFACTS', tempfile.mkdtemp(prefix='devhouse-browser-')))
 ARTIFACTS.mkdir(parents=True, exist_ok=True)
 errors = []
@@ -51,7 +52,21 @@ def close_station(page):
         panel.wait_for(state='hidden')
 
 
-def visit(page, action, pointer=False):
+def unlock_computer(page, password=PC_PASSWORD):
+    """Use the visible game login, creating credentials only on first use."""
+    panel = page.locator('#station-panel[data-station="work"]')
+    if not panel.locator('.computer-monitor[data-computer-app-active="login"]').is_visible():
+        return panel
+    form = panel.locator('#computer-login-form')
+    form.locator('[name="password"]').fill(password)
+    if form.locator('[name="confirm"]').count():
+        form.locator('[name="confirm"]').fill(password)
+    form.locator('button[type="submit"]').click()
+    panel.locator('.computer-monitor[data-computer-app-active="desktop"]').wait_for(state='visible')
+    return panel
+
+
+def visit(page, action, pointer=False, authenticate=True):
     """Use ordinary walking routes, with no character teleportation."""
     close_station(page)
     before = page.evaluate("""action => ({x:window.__testedScene.player.x,
@@ -88,6 +103,8 @@ def visit(page, action, pointer=False):
         after = page.evaluate('({x:window.__testedScene.player.x,y:window.__testedScene.player.y})')
         assert abs(after['x']-before['x'])+abs(after['y']-before['y']) > 10
     assert page.locator('#office-canvas').is_visible(), 'Sector decisions must keep the office visible.'
+    if action == 'work' and authenticate:
+        unlock_computer(page)
     return panel
 
 
@@ -104,7 +121,22 @@ def development(page):
     return computer_app(page, 'development')
 
 
-def answer_puzzle(page, correct=True):
+def terminal_command(page, command):
+    form = page.locator('#terminal-command-form')
+    page.wait_for_function("""() => {
+      const input=document.querySelector('#terminal-command-form [name="command"]');
+      const screen=document.querySelector('.computer-screen');
+      if (!input || !screen) return false;
+      const box=input.getBoundingClientRect(), monitor=screen.getBoundingClientRect();
+      return box.width>0 && box.left>=monitor.left && box.right<=monitor.right
+        && box.top>=monitor.top && box.bottom<=monitor.bottom
+        && box.left>=0 && box.top>=0 && box.right<=innerWidth && box.bottom<=innerHeight;
+    }""")
+    form.locator('[name="command"]').fill(command)
+    form.locator('[name="command"]').press('Enter')
+
+
+def answer_puzzle(page, correct=True, typed=False):
     """Choose office decisions by their visible meaning, never the answer key."""
     session = company(page)['workSession']
     puzzle = session['puzzles'][session['index']]
@@ -127,7 +159,10 @@ def answer_puzzle(page, correct=True):
     answer = candidates[0] if correct else next(option for option in puzzle['options'] if option['id'] != candidates[0]['id'])
     choice = page.locator(f'[data-puzzle-answer="{answer["id"]}"]')
     assert choice.locator('strong').inner_text() == answer['label']
-    choice.click()
+    if typed:
+        terminal_command(page, str(puzzle['options'].index(answer) + 1))
+    else:
+        choice.click()
     assert company(page)['workSession']['index'] == session['index'] + 1
     assert company(page)['workSession']['mistakes'] == session['mistakes'] + (0 if correct else 1)
     assert page.locator(f'.puzzle-feedback[data-correct="{str(correct).lower()}"]').is_visible()
@@ -442,6 +477,7 @@ def verify_v2_office_progression(browser, url):
     close_station(page)
     page.screenshot(path=str(ARTIFACTS/'devhouse-v3-commercial-partition.png'), full_page=True, animations='disabled')
     work = development(page)
+    terminal_command(page, 'rotina')
     work.locator('[data-allocation="quality"]').evaluate("element => {element.value=3; element.dispatchEvent(new Event('change',{bubbles:true}));}")
     team = visit(page, 'team')
     team.locator('[data-station-tab="candidates"]').click()
@@ -577,6 +613,82 @@ def verify_store_budget(browser, url):
     context.close()
 
 
+def verify_computer_login(browser, url):
+    """Every physical PC session authenticates, without changing the company."""
+    context = browser.new_context(viewport={'width':1440,'height':1000}, reduced_motion='reduce')
+    page = context.new_page()
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.goto(url, wait_until='networkidle')
+    create_founder(page, 'Teste do computador', 'Estudio Retro')
+    panel = visit(page, 'work', authenticate=False)
+    assert page.evaluate('window.__testedScene.player.seated'), 'The founder must sit down before the PC login.'
+    assert panel.locator('.computer-monitor[data-computer-app-active="login"]').is_visible()
+    page.wait_for_function('document.querySelector(\'#computer-login-form [name="password"]\') === document.activeElement')
+    first = company(page)
+    form = panel.locator('#computer-login-form')
+    assert form.locator('[name="confirm"]').is_visible(), 'First use must let the player create a game password.'
+    form.locator('[name="password"]').fill(PC_PASSWORD)
+    form.locator('[name="confirm"]').fill('senha-diferente')
+    form.locator('button[type="submit"]').click()
+    panel.locator('.computer-login-error').wait_for(state='visible')
+    assert panel.locator('.computer-login-error').is_visible(), 'Mismatched confirmation must explain the failed setup.'
+    assert panel.locator('.computer-monitor[data-computer-app-active="login"]').is_visible()
+    unlock_computer(page)
+    configured = company(page)
+    for key in ['cash','day','projects','office','stats','manualDeliveryHours','manualQualityHours','actionHours']:
+        assert configured[key] == first[key], f'Creating a PC password must not change {key}.'
+    assert configured['computer']['passwordHash'] and configured['computer']['passwordSalt']
+    assert PC_PASSWORD not in json.dumps(configured['computer']), 'The save must not contain the entered password.'
+    page.screenshot(path=str(ARTIFACTS/'devhouse-retro-desktop.png'), full_page=True, animations='disabled')
+
+    close_station(page)
+    assert not page.evaluate('window.__testedScene.player.seated')
+    panel = visit(page, 'work', authenticate=False)
+    form = panel.locator('#computer-login-form')
+    assert not form.locator('[name="confirm"]').count()
+    form.locator('[name="password"]').fill('senha-incorreta')
+    form.locator('button[type="submit"]').click()
+    panel.locator('.computer-login-error').wait_for(state='visible')
+    assert panel.locator('.computer-login-error').is_visible()
+    assert panel.locator('.computer-monitor[data-computer-app-active="login"]').is_visible(), 'A wrong password must keep the desktop locked.'
+    assert company(page)['computer'] == configured['computer']
+    page.screenshot(path=str(ARTIFACTS/'devhouse-retro-login.png'), full_page=True, animations='disabled')
+    unlock_computer(page)
+    panel.locator('[data-computer-command="start-menu"]').click()
+    panel.locator('.computer-start-menu').wait_for(state='visible')
+    panel.locator('[data-computer-command="lock"]').first.click()
+    assert panel.locator('.computer-monitor[data-computer-app-active="login"]').is_visible()
+    assert page.evaluate('window.__testedScene.player.seated'), 'Locking the PC must keep the founder at the desk.'
+    unlock_computer(page)
+    close_station(page)
+    saved = company(page)
+    page.reload(wait_until='networkidle')
+    instrument_scene(page)
+    assert company(page)['computer'] == saved['computer'], 'PC credentials must survive a reload.'
+    panel = visit(page, 'work', authenticate=False)
+    assert panel.locator('.computer-monitor[data-computer-app-active="login"]').is_visible(), 'Reload must not retain an authenticated session.'
+    before_reset = company(page)
+    panel.locator('[data-computer-command="reset-password"]').click()
+    assert panel.locator('#computer-login-form [name="confirm"]').is_visible()
+    panel.locator('[data-computer-command="cancel-reset"]').click()
+    assert company(page)['computer'] == before_reset['computer'], 'Cancelling recovery must preserve the existing credential.'
+    panel.locator('[data-computer-command="reset-password"]').click()
+    recovered_password = 'novo-escritorio'
+    unlock_computer(page, recovered_password)
+    recovered = company(page)
+    assert recovered['computer']['passwordHash'] != before_reset['computer']['passwordHash']
+    for key in ['profile','day','cash','projects','employees','office','history','stats','manualDeliveryHours','manualQualityHours','actionHours']:
+        assert recovered[key] == before_reset[key], f'Password recovery must preserve {key}.'
+    close_station(page)
+    panel = visit(page, 'work', authenticate=False)
+    unlock_computer(page, recovered_password)
+    close_station(page)
+    context.close()
+    checks.append('First-use password setup validates confirmation and saves a salted credential without spending game time')
+    checks.append('Wrong passwords, desktop lock, physical reentry and reload all require the game PC login')
+    checks.append('Password recovery and cancellation preserve the founder, company and office progress')
+
+
 def run_journey(browser, url):
     context = browser.new_context(viewport={'width':1440,'height':1000}, reduced_motion='reduce')
     page = context.new_page()
@@ -638,6 +750,17 @@ def run_journey(browser, url):
     checks.append('Sales discovery, negotiated contract, project-board execution mode and founder priority')
 
     work = development(page)
+    untouched = company(page)
+    terminal_command(page, 'ajuda')
+    assert page.locator('.terminal-history').inner_text().strip()
+    terminal_command(page, 'status')
+    terminal_command(page, 'comando-desconhecido')
+    for key in ['cash','projects','workSession','manualDeliveryHours','manualQualityHours','manualSalesHours','actionHours']:
+        assert company(page)[key] == untouched[key], f'Read-only and unknown terminal commands must not change {key}.'
+    assert 'comando-desconhecido' in page.locator('.terminal-history').inner_text()
+    terminal_command(page, 'limpar')
+    assert not page.locator('.terminal-history').count(), 'Clearing the terminal must remove the entire command history.'
+    terminal_command(page, 'rotina')
     work.locator('[data-allocation="quality"]').evaluate("element => {element.value=2; element.dispatchEvent(new Event('change',{bubbles:true}));}")
     assert sum(company(page)['allocation'].values()) == 8
     assert company(page)['allocation']['quality'] == 2
@@ -645,6 +768,19 @@ def run_journey(browser, url):
     assert page.evaluate('window.__testedScene.player.seated && window.__testedScene.player.facing === "up"')
     computer_app(page, 'desktop')
     page.screenshot(path=str(ARTIFACTS/'devhouse-v3-computer-desktop.png'), full_page=True, animations='disabled')
+    work.locator('[data-computer-command="start-menu"]').click()
+    work.locator('.computer-start-menu').wait_for(state='visible')
+    work.locator('.computer-start-menu [data-computer-app="development"]').click()
+    assert not work.locator('.computer-start-menu').count(), 'Opening an app must dismiss the Start menu.'
+    work.locator('[data-computer-command="maximize"]').click()
+    assert work.locator('[data-computer-window="development"]').get_attribute('class').find('computer-window-maximized') >= 0
+    work.locator('[data-computer-command="maximize"]').click()
+    assert 'computer-window-maximized' not in work.locator('[data-computer-window="development"]').get_attribute('class')
+    work.locator('[data-computer-command="minimize"]').click()
+    assert work.locator('.computer-monitor[data-computer-app-active="desktop"]').is_visible()
+    computer_app(page, 'development')
+    assert company(page)['workSession'] is None
+    checks.append('Classic Start menu opens applications and functional window controls minimize, resume and maximize the PC app')
     expansion = computer_app(page, 'expansion')
     assert expansion.locator('.office-store').is_visible()
     before = company(page)['cash']
@@ -656,12 +792,12 @@ def run_journey(browser, url):
     work = computer_app(page, 'development')
     progress_before = company(page)['projects'][0]['progress']
     hours_before = company(page)['manualDeliveryHours']
-    work.locator('[data-action="start-work-session"]').click()
+    terminal_command(page, 'trabalhar')
     assert company(page)['projects'][0]['progress'] == progress_before
     assert company(page)['manualDeliveryHours'] == hours_before
     assert {puzzle['kind'] for puzzle in company(page)['workSession']['puzzles']} == {'schedule','scope','priorities','cash','quality'}
     answer_puzzle(page, correct=False)
-    answer_puzzle(page, correct=True)
+    answer_puzzle(page, correct=True, typed=True)
     partial = company(page)['workSession']
     assert partial['index'] == 2 and partial['mistakes'] == 1
     close_station(page)
@@ -674,11 +810,11 @@ def run_journey(browser, url):
     work = development(page)
     assert work.locator('.work-puzzle').get_attribute('data-session') == partial['id']
     while company(page)['workSession']['index'] < 5:
-        answer_puzzle(page, correct=True)
+        answer_puzzle(page, correct=True, typed=True)
     assert work.locator('.puzzle-results').is_visible()
-    assert '4 / 5' in work.locator('.puzzle-results').inner_text()
+    assert '4/5' in work.locator('.puzzle-results').inner_text().replace(' ', '')
     page.screenshot(path=str(ARTIFACTS/'devhouse-v3-computer-puzzles.png'), full_page=True, animations='disabled')
-    work.locator('[data-action="complete-work-session"]').click()
+    terminal_command(page, 'concluir')
     assert company(page)['workSession'] is None
     assert company(page)['manualDeliveryHours'] > hours_before
     progress = company(page)['projects'][0]['progress']
@@ -687,9 +823,10 @@ def run_journey(browser, url):
     assert company(page)['projects'][0]['progress'] == progress
     checks.append('Physical founder PC sits, opens three virtual apps, buys equipment and stands safely on exit')
     checks.append('Five real office puzzles give right/wrong feedback, save midway and apply one shared two-hour work block')
+    checks.append('The interactive terminal accepts read-only commands, numbered puzzle answers and one work conclusion without bypassing the shared hour budget')
     quality_before = company(page)['projects'][0]['quality']
     debt_before = company(page)['debt']
-    work.locator('[data-action="review"]').click()
+    terminal_command(page, 'revisar')
     assert company(page)['projects'][0]['quality'] > quality_before
     assert company(page)['debt'] < debt_before
     assert company(page)['manualQualityHours'] == 1
@@ -806,6 +943,7 @@ def run_journey(browser, url):
     fresh = company(page)
     assert fresh['cash'] == 20000 and fresh['day'] == 1
     assert not fresh['projects'] and not fresh['employees'] and not fresh['furniture']
+    assert not fresh.get('computer', {}).get('passwordHash'), 'A new founder must create their own PC password.'
     assert not page.locator('#station-panel').is_visible()
     assert not page.evaluate('window.__testedScene.interactionOpen')
     assert page.locator('#office-canvas').evaluate('element => element === document.activeElement')
@@ -833,6 +971,25 @@ def run_mobile(browser, url, advanced_fixture=None):
     store.locator('[data-store-tab="rooms"]').first.click()
     page.screenshot(path=str(ARTIFACTS/'devhouse-v3-mobile-store.png'), full_page=True, animations='disabled')
     checks.append('Mobile founder, pointer station routing and every responsive store tab')
+    panel = visit(page, 'work', authenticate=False)
+    assert panel.locator('.computer-monitor[data-computer-app-active="login"]').is_visible()
+    assert page.evaluate('document.body.scrollWidth <= innerWidth')
+    page.screenshot(path=str(ARTIFACTS/'devhouse-retro-mobile-login.png'), full_page=True, animations='disabled')
+    unlock_computer(page)
+    assert page.evaluate('document.body.scrollWidth <= innerWidth')
+    page.screenshot(path=str(ARTIFACTS/'devhouse-retro-mobile-desktop.png'), full_page=True, animations='disabled')
+    computer_app(page, 'development')
+    terminal_command(page, 'ajuda')
+    terminal_command(page, 'rotina')
+    assert panel.locator('[data-allocation="delivery"]').is_visible()
+    assert page.evaluate('document.body.scrollWidth <= innerWidth')
+    panel.locator('[data-computer-command="maximize"]').click()
+    assert page.evaluate('document.body.scrollWidth <= innerWidth')
+    terminal_command(page, 'status')
+    page.screenshot(path=str(ARTIFACTS/'devhouse-retro-mobile-terminal.png'), full_page=True, animations='disabled')
+    close_station(page)
+    assert not page.evaluate('window.__testedScene.player.seated')
+    checks.append('Mobile PC login, retro desktop, typed terminal commands, routine controls and maximized window fit the phone viewport')
     context.close()
     if advanced_fixture:
         context, page = saved_context(browser, url, advanced_fixture, {'width':390,'height':844})
@@ -881,6 +1038,7 @@ def main():
             with sync_playwright() as p:
                 browser = p.chromium.launch(executable_path=shutil.which('chromium'), headless=True, args=['--no-sandbox'])
                 try:
+                    verify_computer_login(browser, url)
                     run_journey(browser, url)
                     verify_legacy_save(browser, url)
                     advanced_fixture = verify_v2_office_progression(browser, url)
