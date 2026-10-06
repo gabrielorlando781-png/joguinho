@@ -1,7 +1,9 @@
 import './style.css';
 import { OfficeScene } from './office.js';
+import { renderOfficeStore } from './store-ui.js';
+import { renderComputer, renderWorkPuzzle } from './computer-ui.js';
 import { icon, escape, money, pct, avatar } from './ui.js';
-import { CANDIDATES, FURNITURE, createGame, loadGame, saveGame, advanceDay, prospect, hireEmployee, buyFurniture, setAllocation, setProjectMode, performAction, negotiateProject, discoverLead, interviewCandidate, assignEmployee, resolveProjectEvent, setProjectPriority, collectReceivable, investProduct, recordTravel, takeLoan, repayLoan } from './simulation.js';
+import { CANDIDATES, createGame, loadGame, saveGame, advanceDay, prospect, hireEmployee, setAllocation, setProjectMode, performAction, negotiateProject, discoverLead, interviewCandidate, assignEmployee, resolveProjectEvent, setProjectPriority, collectReceivable, investProduct, recordTravel, takeLoan, repayLoan, getOfficeOverview, getRoomEffects, ROOM_ACTIONS, getRoomActionEligibility, purchaseOfficeItem, expandOffice, upgradeRoom, customizeBanner, upgradeComputer, performRoomAction, getNegotiationChance, getWorkSession, getWorkSessionEligibility, startWorkSession, answerWorkPuzzle, completeWorkSession } from './simulation.js';
 
 const saved = loadGame();
 let gameStarted = Boolean(saved);
@@ -12,18 +14,22 @@ let scene;
 let currentStation = null;
 let panelWasPaused = true;
 let panelTab = 'main';
+let computerApp = 'desktop';
+let computerStoreTab = 'overview';
 let pendingSummary = null;
 let toastTimer;
 let positionTimer;
 let lastModalTrigger;
 let lastPrompt = '';
 const stations = {
-  work: { title: 'Estação de desenvolvimento', subtitle: 'Seu notebook · rotina, foco e qualidade', icon: 'code', short: 'Desenvolvimento' },
+  work: { title: 'Meu computador', subtitle: 'Sente para desenvolver, planejar a expansão e criar produtos', icon: 'code', short: 'Meu PC' },
   sales: { title: 'Mesa comercial', subtitle: 'Converse, descubra o escopo e negocie', icon: 'message', short: 'Comercial' },
   board: { title: 'Quadro de projetos', subtitle: 'Prazos, entregas e decisões do time', icon: 'folder', short: 'Projetos' },
   finance: { title: 'Setor financeiro', subtitle: 'Fluxo de caixa, cobranças e crédito', icon: 'wallet', short: 'Financeiro' },
   team: { title: 'Pessoas & cultura', subtitle: 'Entreviste, contrate e distribua responsabilidades', icon: 'people', short: 'RH' },
-  furniture: { title: 'Bancada de arquitetura', subtitle: 'Invista no espaço e na produtividade', icon: 'chair', short: 'Mobília' },
+  furniture: { title: 'Loja do escritório', subtitle: 'Cada compra muda o espaço, a rotina e o caixa', icon: 'chair', short: 'Loja' },
+  meeting: { title: 'Sala de reunião', subtitle: 'Alinhe pessoas, apresente propostas e integre o time', icon: 'people', short: 'Reuniões' },
+  ceo: { title: 'Sala do fundador', subtitle: 'Foco e prestígio, sem perder o contato com a equipe', icon: 'target', short: 'CEO' },
   coffee: { title: 'Copa', subtitle: 'Uma pequena pausa também faz parte do trabalho', icon: 'coffee', short: 'Café' },
   rest: { title: 'Cantinho de descanso', subtitle: 'Uma equipe descansada constrói melhor', icon: 'sun', short: 'Descanso' },
   product: { title: 'Laboratório de produto', subtitle: 'Transforme problemas conhecidos em uma aposta sua', icon: 'bulb', short: 'Laboratório' },
@@ -34,7 +40,14 @@ const stations = {
 document.querySelector('#app').innerHTML = `<main class="game-shell"><section id="world-stage" class="world-stage" aria-label="Escritório da sua empresa"><canvas id="office-canvas" tabindex="0"></canvas><header class="world-topbar"><a class="brand" href="#" aria-label="devhouse"><span class="brand-mark">${icon('code')}</span><span>devhouse<span class="brand-dot">.</span></span></a><div class="world-identity"><strong id="company-name"></strong><small>SEU ESCRITÓRIO · SUA HISTÓRIA</small></div><div class="world-time"><strong id="day-date"></strong><span id="day-time"></span></div><div class="time-controls"><button class="icon-button" id="pause-button" data-action="pause" aria-label="Retomar tempo">${icon('play')}</button><button class="speed-button" id="speed-button" data-action="speed" title="Alterar velocidade">1×</button><span class="hud-divider"></span><button class="icon-button" data-travel="reception" aria-label="Ir ao diário e ao guia do fundador">${icon('book')}</button><span id="save-status" class="save-status" title="Salvamento automático">${icon('check')}</span></div></header><div class="world-bottom"><div class="walk-help"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar</span><span><kbd>E</kbd> consultar</span><span><kbd>Esc</kbd> voltar</span></div><div id="context-prompt" class="context-prompt">Clique em um setor para caminhar até ele.</div><nav class="office-compass" aria-label="Caminhar até um setor">${Object.entries(stations).map(([key, s]) => `<button data-travel="${key}" title="Caminhar até ${s.short}" aria-label="Caminhar até ${s.short}">${icon(s.icon)}<span>${s.short}</span></button>`).join('')}</nav></div><div class="world-watermark">CAPÍTULO 02 · A EMPRESA ACONTECE AQUI</div><section id="station-panel" class="station-panel" hidden aria-label="Consulta no setor do escritório"></section></section></main>`;
 
 function activeProjects() { return state.projects.filter((p) => p.status === 'active'); }
-function dailyCost() { return 110 + state.employees.reduce((sum, e) => sum + e.salary * (e.contract === 'CLT' ? 1.7 : 1.15) / 20, 0); }
+function isStoreOpen() { return currentStation === 'furniture' || currentStation === 'work' && computerApp === 'expansion'; }
+function focusWorkPuzzle() {
+  document.querySelector('#station-panel [data-puzzle-answer], #station-panel [data-action="complete-work-session"]')?.focus({ preventScroll: true });
+}
+function dailyCost() {
+  const office = getOfficeOverview(state);
+  return office.dailyRent + office.monthlyMaintenance / 28 + state.employees.reduce((sum, e) => sum + e.salary * (e.contract === 'CLT' ? 1.7 : 1.15) / 20, 0);
+}
 function toast(message, ok = true) {
   document.querySelector('#toast-root').innerHTML = `<div class="toast ${ok ? '' : 'toast-error'}">${icon(ok ? 'check' : 'message')}<span>${escape(message)}</span></div>`;
   clearTimeout(toastTimer);
@@ -44,7 +57,7 @@ function persist() {
   if (!gameStarted) return;
   const result = saveGame(state);
   document.querySelector('#save-status').innerHTML = icon(result?.ok === false ? 'message' : 'check');
-  document.querySelector('#save-status').title = result?.ok === false ? 'Navegador não permitiu salvar. Mantenha esta aba aberta.' : 'Salvo neste navegador';
+  document.querySelector('#save-status').title = result?.ok === false ? result.message : 'Salvo neste navegador';
 }
 function renderClock() {
   document.querySelector('#company-name').textContent = state.profile.company;
@@ -59,6 +72,17 @@ function renderClock() {
 function render() {
   renderClock();
   scene?.setState(state);
+  if (scene && gameStarted) state.officePosition = { x: scene.player.x, y: scene.player.y };
+  const office = getOfficeOverview(state);
+  document.querySelector('.world-watermark').textContent = `CAPÍTULO 03 · ${office.stage.name.toUpperCase()}`;
+  for (const name of ['meeting', 'ceo']) {
+    document.querySelector(`[data-travel="${name}"]`).hidden = !state.office.special[name];
+  }
+  if (currentStation && !scene.isNearStation(currentStation)) {
+    state.paused = true;
+    panelWasPaused = true;
+    closeStation();
+  }
   if (currentStation) renderStation();
 }
 function run(fn, ...args) {
@@ -67,12 +91,12 @@ function run(fn, ...args) {
   const focusKey = ['allocation', 'projectMode', 'employeeAssignment', 'employeeRole'].find((key) => focused?.dataset?.[key]);
   const focusValue = focusKey ? focused.dataset[focusKey] : null;
   const result = fn(state, ...args);
-  persist(); render();
+  render(); persist();
   if (result?.message) toast(result.message, result.ok !== false);
   if (focusKey) {
     const attr = focusKey.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
     document.querySelector(`[data-${attr}="${CSS.escape(focusValue)}"]`)?.focus();
-  }
+  } else if (currentStation) document.querySelector('#station-panel [data-action="close-station"]')?.focus({ preventScroll: true });
   return result;
 }
 function openStation(action) {
@@ -81,17 +105,22 @@ function openStation(action) {
   if (currentStation !== action) {
     panelWasPaused = state.paused;
     panelTab = 'main';
+    if (action === 'work') { computerApp = 'desktop'; computerStoreTab = 'overview'; }
   }
   currentStation = action;
   state.paused = true;
   scene.setInteractionOpen(true);
+  scene.setPlayerSeated?.(action === 'work');
+  state.officePosition = { x: scene.player.x, y: scene.player.y };
   renderStation();
   renderClock();
   persist();
-  requestAnimationFrame(() => document.querySelector('#station-panel .station-close')?.focus());
+  requestAnimationFrame(() => document.querySelector('#station-panel [data-action="close-station"]')?.focus());
 }
 function closeStation() {
   if (!currentStation) return;
+  scene.setPlayerSeated?.(false);
+  state.officePosition = { x: scene.player.x, y: scene.player.y };
   currentStation = null;
   document.querySelector('#station-panel').hidden = true;
   scene.setInteractionOpen(false);
@@ -101,6 +130,7 @@ function closeStation() {
 }
 function travelTo(action) {
   if (!gameStarted) return;
+  if (['meeting', 'ceo'].includes(action) && !state.office.special[action]) return;
   if (currentStation) closeStation();
   const result = scene.requestInteraction(action);
   if (result === false) toast('Não foi possível encontrar um caminho até esse setor.', false);
@@ -109,6 +139,7 @@ function positionPanel() {
   const panel = document.querySelector('#station-panel');
   if (!currentStation || window.innerWidth <= 760) { panel.style.left = ''; panel.style.top = ''; return; }
   const anchor = scene.getScreenPoint(currentStation);
+  if (!anchor) return;
   const width = panel.getBoundingClientRect().width || Math.min(610, window.innerWidth - 48);
   const height = Math.min(panel.offsetHeight || 560, window.innerHeight - 185);
   const left = anchor.x > window.innerWidth / 2 ? anchor.x - width - 28 : anchor.x + 28;
@@ -121,27 +152,77 @@ function stats(items) {
 function tabs(items) {
   return `<nav class="in-world-tabs" aria-label="Opções deste setor">${items.map(([id, label]) => `<button data-station-tab="${id}" class="${panelTab === id ? 'active' : ''}">${label}</button>`).join('')}</nav>`;
 }
+function selectPanelTab(id, attribute) {
+  panelTab = id;
+  (document.querySelector('#station-panel .computer-window-content') || document.querySelector('#station-panel .station-body')).scrollTop = 0;
+  renderStation();
+  document.querySelector(`#station-panel [${attribute}="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+}
 function projectRow(p) {
   const progress = pct(p.progress / p.hours * 100);
   return `<div class="project-row"><div><strong>${escape(p.title)}</strong><small>${escape(p.client)} · ${money(p.price)} · prazo D${p.deadline}</small></div><div class="project-progress"><div class="mini-meter"><span style="width:${progress}%"></span></div><span>${Math.round(progress)}%</span></div></div>`;
 }
+function officeCostContent(office) {
+  return `<h3 class="subheading">O espaço continua custando depois da compra.</h3>${stats([
+    ['ESCRITÓRIO', escape(office.stage.name), `${office.usedSlots} / ${office.maxSlots} posições ocupadas`],
+    ['ALUGUEL & UTILIDADES', money(office.dailyRent), 'Cobrança diária, inclusive no fim de semana'],
+    ['MANUTENÇÃO MENSAL', money(office.monthlyMaintenance), `Próxima cobrança: D${office.nextMaintenanceDay}`],
+  ])}<div class="concept-note">${icon('wallet')}<p>Computadores melhores e salas construídas acrescentam manutenção a cada 28 dias. O custo diário estimado reserva uma parte desse valor; o lançamento no caixa ocorre na data indicada. A folha permanece separada e só é paga nos dias úteis.</p></div><h3 class="subheading">Sua reserva precisa acompanhar o crescimento.</h3><p class="muted">A loja mostra preço, ocupação e custo contínuo antes de cada compra. Mais espaço permite contratar e separar setores, mas aumenta o aluguel mesmo quando não há contratos em andamento.</p>`;
+}
+function specialRoomContent(room) {
+  if (!state.office.special[room]) return '<div class="empty-state">Construa esta sala na loja para usar suas ações.</div>';
+  const meeting = room === 'meeting';
+  const actions = ROOM_ACTIONS.filter((action) => action.room === room);
+  const effects = getRoomEffects(state);
+  const intro = meeting
+    ? 'Uma hora de conversa pode poupar retrabalho. As ações usam a rotina do fundador e só podem ser feitas uma vez por dia.'
+    : 'A privacidade ajuda a recuperar foco e energia. Usar a sala repetidamente aumenta a distância da equipe; reservar tempo para conversar reaproxima vocês.';
+  return `${stats(meeting ? [
+    ['EQUIPE', state.employees.length, 'Pessoas que constroem junto'],
+    ['SINERGIA', `${Math.round(effects.synergy * 100)}%`, 'A divisão das salas afeta a colaboração'],
+  ] : [
+    ['ENERGIA', `${Math.round(state.energy)}%`, 'Seu foco também depende de descanso'],
+    ['ISOLAMENTO', state.office.ceoIsolation, 'O excesso reduz a moral da equipe'],
+  ])}<p class="muted">${intro}</p><div class="office-room-actions">${actions.map((action) => {
+    const eligibility = getRoomActionEligibility(state, action.id);
+    const area = { sales: 'vendas', delivery: 'desenvolvimento', quality: 'qualidade e gestão' }[action.area];
+    return `<article class="project-card"><h3>${escape(action.label || action.name)}</h3><p class="muted">${escape(action.description)}</p><div class="opportunity-meta"><span>${icon('clock')} ${action.hours}h de ${area}</span><span>${action.cost ? money(action.cost) : 'Sem custo em dinheiro'}</span></div>${!eligibility.ok ? `<p class="muted">${escape(eligibility.reason || eligibility.message)}</p>` : ''}<button class="${eligibility.ok ? 'primary' : 'secondary'}-button full" data-room-action="${action.id}" ${eligibility.ok ? '' : 'disabled'}>${escape(action.label || action.name)} ${icon('arrow')}</button></article>`;
+  }).join('')}</div><div class="concept-note">${icon(meeting ? 'people' : 'target')}<p>${meeting ? 'Alinhamento reduz bloqueios e melhora revisões; apresentações ajudam nas próximas negociações; integração acelera os primeiros dias de quem acabou de chegar.' : 'Prestígio tem consequência. Observe o isolamento e a moral no RH para decidir entre trabalhar sozinho e passar tempo com o time.'}</p></div>`;
+}
 function renderStation() {
   const el = document.querySelector('#station-panel');
   const s = stations[currentStation];
-  const previousScroll = el.querySelector('.station-body')?.scrollTop || 0;
+  const previousScroll = (el.querySelector('.computer-window-content') || el.querySelector('.station-body'))?.scrollTop || 0;
   el.hidden = false;
   el.dataset.station = currentStation;
+  el.classList.toggle('computer-panel', currentStation === 'work');
+  if (currentStation === 'work') {
+    el.innerHTML = `<div class="station-frame computer-frame"><div class="station-body computer-host">${stationContent('work')}</div></div>`;
+    (el.querySelector('.computer-window-content') || el.querySelector('.station-body')).scrollTop = previousScroll;
+    requestAnimationFrame(positionPanel);
+    return;
+  }
   el.innerHTML = `<div class="station-frame"><header class="station-header"><span class="station-icon">${icon(s.icon)}</span><div class="station-heading"><div class="section-label">${escape(state.profile.name)} ESTÁ CONSULTANDO</div><h2>${s.title}</h2><p class="station-subtitle">${s.subtitle}</p></div><button class="station-close icon-button" data-action="close-station" aria-label="Voltar ao escritório">${icon('close')}</button></header><div class="station-body">${stationContent(currentStation)}</div><footer class="station-status"><span class="online-dot"></span> Consulta no local · tempo pausado <span><kbd>Esc</kbd> voltar ao escritório</span></footer></div>`;
   el.querySelector('.station-body').scrollTop = previousScroll;
   requestAnimationFrame(positionPanel);
 }
+function developmentContent() {
+    const categories = [['sales', 'Vender & descobrir', 'message'], ['delivery', 'Desenvolver & criar', 'code'], ['quality', 'Revisar & gerir', 'target']];
+    const effects = getRoomEffects(state);
+    const routine = `${tabs([['main', 'Rotina de hoje'], ['focus', 'Foco & código']])}${stats([['ENERGIA', `${Math.round(state.energy)}%`, 'Café e descanso recuperam'], ['DÍVIDA TÉCNICA', `${Math.round(state.debt)}%`, 'Qualidade reduz o custo futuro'], ['DESLOCAMENTO', `${(state.travelHours || 0).toFixed(2)}h`, 'Tempo que sai da capacidade de entrega']])}<div class="concept-note">${icon('people')}<p>Ruído entre comercial e desenvolvimento: <strong>${Math.round(effects.noise * 100)}%</strong>. Sinergia da equipe: <strong>${Math.round(effects.synergy * 100)}%</strong>. Isolar setores reduz interrupções; manter proximidade facilita revisões e ajuda contra bloqueios.</p></div>${panelTab === 'focus' ? `<h3 class="subheading">Em qual projeto você vai se concentrar?</h3><p class="muted">Seu foco define a prioridade das horas do fundador. O RH distribui o trabalho da equipe.</p>${activeProjects().map((p) => `<article class="project-card">${projectRow(p)}<button class="${state.focusProjectId === p.id ? 'primary' : 'secondary'}-button compact full" data-project-priority="${escape(p.id)}">${state.focusProjectId === p.id ? `${icon('check')} Foco atual` : 'Priorizar este projeto'}</button></article>`).join('') || '<div class="empty-state">Nenhum contrato na mesa. Vá ao comercial para fechar seu primeiro projeto.</div>'}<div class="action-grid"><button class="secondary-button" data-action="review">${icon('target')} Revisar 1h</button></div>` : `<h3 class="subheading">Oito horas. Escolhas que competem.</h3><p class="muted">Discovery e propostas usam vendas; entrevistas e pesquisa usam qualidade; protótipos e código usam desenvolvimento.</p><div class="allocation-bar">${categories.map(([key]) => `<span class="${key}" style="flex:${state.allocation[key]}"></span>`).join('')}</div><div class="allocation-rows">${categories.map(([key, label, glyph]) => `<div class="allocation-row"><div class="allocation-label"><span class="allocation-icon ${key}">${icon(glyph)}</span><strong>${label}</strong><b>${state.allocation[key]}h</b></div><input class="range ${key}" type="range" min="0" max="8" step="1" value="${state.allocation[key]}" data-allocation="${key}" aria-label="Horas para ${label}"/></div>`).join('')}</div><div class="action-grid"><button class="secondary-button" data-action="review">${icon('target')} Revisar 1h</button></div><div class="concept-note">${icon('clock')}<p>Trabalho manual adianta as horas reservadas; não cria horas extras. Ao fechar o escritório, a rotina restante e as tarefas da equipe são executadas.</p></div>`}`;
+    return `${renderWorkPuzzle(state, getWorkSession(state), getWorkSessionEligibility(state))}${routine}`;
+}
 function stationContent(action) {
   if (action === 'work') {
-    const categories = [['sales', 'Vender & descobrir', 'message'], ['delivery', 'Desenvolver & criar', 'code'], ['quality', 'Revisar & gerir', 'target']];
-    return `${tabs([['main', 'Rotina de hoje'], ['focus', 'Foco & código']])}${stats([['ENERGIA', `${Math.round(state.energy)}%`, 'Café e descanso recuperam'], ['DÍVIDA TÉCNICA', `${Math.round(state.debt)}%`, 'Qualidade reduz o custo futuro'], ['DESLOCAMENTO', `${(state.travelHours || 0).toFixed(2)}h`, 'Tempo que sai da capacidade de entrega']])}${panelTab === 'focus' ? `<h3 class="subheading">Em qual projeto você vai se concentrar?</h3><p class="muted">Seu foco define a prioridade das horas do fundador. O RH distribui o trabalho da equipe.</p>${activeProjects().map((p) => `<article class="project-card">${projectRow(p)}<button class="${state.focusProjectId === p.id ? 'primary' : 'secondary'}-button compact full" data-project-priority="${escape(p.id)}">${state.focusProjectId === p.id ? `${icon('check')} Foco atual` : 'Priorizar este projeto'}</button></article>`).join('') || '<div class="empty-state">Nenhum contrato na mesa. Vá ao comercial para fechar seu primeiro projeto.</div>'}<div class="action-grid"><button class="primary-button" data-action="work">${icon('code')} Trabalhar 2h</button><button class="secondary-button" data-action="review">${icon('target')} Revisar 1h</button></div>` : `<h3 class="subheading">Oito horas. Escolhas que competem.</h3><p class="muted">Discovery e propostas usam vendas; entrevistas e pesquisa usam qualidade; protótipos e código usam desenvolvimento.</p><div class="allocation-bar">${categories.map(([key]) => `<span class="${key}" style="flex:${state.allocation[key]}"></span>`).join('')}</div><div class="allocation-rows">${categories.map(([key, label, glyph]) => `<div class="allocation-row"><div class="allocation-label"><span class="allocation-icon ${key}">${icon(glyph)}</span><strong>${label}</strong><b>${state.allocation[key]}h</b></div><input class="range ${key}" type="range" min="0" max="8" step="1" value="${state.allocation[key]}" data-allocation="${key}" aria-label="Horas para ${label}"/></div>`).join('')}</div><div class="action-grid"><button class="primary-button" data-action="work">${icon('code')} Trabalhar 2h</button><button class="secondary-button" data-action="review">${icon('target')} Revisar 1h</button></div><div class="concept-note">${icon('clock')}<p>Trabalho manual adianta as horas reservadas; não cria horas extras. Ao fechar o escritório, a rotina restante e as tarefas da equipe são executadas.</p></div>`}`;
+    const content = computerApp === 'expansion' ? renderOfficeStore(state, computerStoreTab)
+      : computerApp === 'development' ? developmentContent()
+        : computerApp === 'laboratory' ? stationContent('product') : '';
+    const minute = Math.floor(Math.min(elapsed, 120) / 120 * 480);
+    const clock = `${String(9 + Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+    return renderComputer(state, { app: computerApp, content, session: getWorkSession(state), clock });
   }
   if (action === 'sales') {
-    return `${stats([['CONTATOS', state.leads.length, 'Até 6 oportunidades abertas'], ['REPUTAÇÃO', `${Math.round(state.reputation)}/100`, 'Influencia propostas premium'], ['TEMPO COMERCIAL', `${state.allocation.sales}h`, 'Discovery usa uma hora da rotina']])}<div class="section-header"><h3 class="subheading">Qual problema vale sua próxima hora?</h3><button class="secondary-button compact" data-action="prospect">${icon('plus')} Prospectar</button></div><p class="muted">Investigar antes de vender diminui incerteza. O preço também muda prazo e recebimento.</p>${state.leads.map((l, i) => `<article class="opportunity-card"><div class="opportunity-top"><span class="client-monogram color-${i % 3}">${escape(l.client.slice(0, 2).toUpperCase())}</span><div><small>${escape(l.sector)}</small><strong>${escape(l.client)}</strong></div><span class="tag">${l.discovered ? 'ESCOPO DESCOBERTO' : 'CONTATO ABERTO'}</span></div><h3>${escape(l.title)}</h3><p>${escape(l.description)}</p><div class="opportunity-meta"><span>${icon('clock')} ${l.estimateMin || Math.floor(l.hours * .85)}–${l.estimateMax || Math.ceil(l.hours * 1.25)}h estimadas</span><span>${l.duration} dias</span></div>${l.discovered ? `<div class="discovery-note"><strong>Discovery concluído</strong><p>${escape(l.qualification?.scope || 'O cliente confirmou o escopo e as necessidades prioritárias.')}</p><small>${escape(l.qualification?.risks || 'Menos incerteza para defender sua proposta.')}</small></div>` : `<button class="secondary-button compact full" data-discover="${escape(l.id)}">${icon('message')} Investigar o escopo · 1h de vendas</button>`}<div class="proposal-options"><button data-negotiate="${escape(l.id)}" data-pricing="discount"><small>COMPETITIVA</small><strong>${money(l.price * .85)}</strong><span>+2 dias de prazo · recebe D+2</span></button><button data-negotiate="${escape(l.id)}" data-pricing="standard" class="recommended"><small>EQUILIBRADA</small><strong>${money(l.price)}</strong><span>Prazo base · recebe D+3</span></button><button data-negotiate="${escape(l.id)}" data-pricing="premium" ${!l.discovered && state.reputation < 25 ? 'disabled' : ''}><small>PREMIUM</small><strong>${money(l.price * 1.2)}</strong><span>−2 dias de prazo · recebe D+5</span></button></div></article>`).join('') || '<div class="empty-state">Seu pipeline está vazio. Prospecte ou reserve mais horas de vendas.</div>'}`;
+    return `${stats([['CONTATOS', state.leads.length, 'Até 6 oportunidades abertas'], ['REPUTAÇÃO', `${Math.round(state.reputation)}/100`, 'Influencia propostas premium'], ['TEMPO COMERCIAL', `${state.allocation.sales}h`, 'Discovery usa uma hora da rotina']])}<div class="section-header"><h3 class="subheading">Qual problema vale sua próxima hora?</h3><button class="secondary-button compact" data-action="prospect">${icon('plus')} Prospectar</button></div><p class="muted">Investigar antes de vender diminui incerteza. Preço e salas mudam as chances de fechar, prazo e recebimento. Cada contato tem uma tentativa de negociação.</p>${state.leads.map((l, i) => `<article class="opportunity-card"><div class="opportunity-top"><span class="client-monogram color-${i % 3}">${escape(l.client.slice(0, 2).toUpperCase())}</span><div><small>${escape(l.sector)}</small><strong>${escape(l.client)}</strong></div><span class="tag">${l.discovered ? 'ESCOPO DESCOBERTO' : 'CONTATO ABERTO'}</span></div><h3>${escape(l.title)}</h3><p>${escape(l.description)}</p><div class="opportunity-meta"><span>${icon('clock')} ${l.estimateMin || Math.floor(l.hours * .85)}–${l.estimateMax || Math.ceil(l.hours * 1.25)}h estimadas</span><span>${l.duration} dias</span></div>${l.discovered ? `<div class="discovery-note"><strong>Discovery concluído</strong><p>${escape(l.qualification?.scope || 'O cliente confirmou o escopo e as necessidades prioritárias.')}</p><small>${escape(l.qualification?.risks || 'Menos incerteza para defender sua proposta.')}</small></div>` : `<button class="secondary-button compact full" data-discover="${escape(l.id)}" ${l.negotiation ? 'disabled' : ''}>${icon('message')} Investigar o escopo · 1h de vendas</button>`}${l.negotiation ? `<div class="interview-note"><strong>Negociação encerrada</strong><p>O cliente recusou a proposta. Novos contatos chegam pela prospecção; esta negociação não pode ser repetida.</p></div>` : ''}<div class="proposal-options"><button data-negotiate="${escape(l.id)}" data-pricing="discount" ${l.negotiation ? 'disabled' : ''}><small>COMPETITIVA</small><strong>${money(l.price * .85)}</strong><span>+2 dias de prazo · recebe D+2<br>${Math.round(getNegotiationChance(state, l.id, 'discount') * 100)}% de chance de fechar</span></button><button data-negotiate="${escape(l.id)}" data-pricing="standard" class="recommended" ${l.negotiation ? 'disabled' : ''}><small>EQUILIBRADA</small><strong>${money(l.price)}</strong><span>Prazo base · recebe D+3<br>${Math.round(getNegotiationChance(state, l.id, 'standard') * 100)}% de chance de fechar</span></button><button data-negotiate="${escape(l.id)}" data-pricing="premium" ${l.negotiation || (!l.discovered && state.reputation < 25) ? 'disabled' : ''}><small>PREMIUM</small><strong>${money(l.price * 1.2)}</strong><span>−2 dias de prazo · recebe D+5<br>${Math.round(getNegotiationChance(state, l.id, 'premium') * 100)}% de chance de fechar</span></button></div></article>`).join('') || '<div class="empty-state">Seu pipeline está vazio. Prospecte ou reserve mais horas de vendas.</div>'}`;
   }
   if (action === 'board') {
     const events = state.pendingEvents || [];
@@ -150,14 +231,15 @@ function stationContent(action) {
   if (action === 'finance') {
     const receivables = state.receivables || [];
     const balance = state.loan?.balance || 0;
-    return `${tabs([['main', 'Caixa & recebimentos'], ['ledger', 'Movimentações'], ['credit', 'Reserva & crédito']])}${stats([['CAIXA', money(state.cash), `${Math.max(0, Math.floor(state.cash / dailyCost()))} dias de fôlego estimado`], ['A RECEBER', money(receivables.reduce((sum, r) => sum + r.amount, 0)), 'Entregar e receber são momentos diferentes'], ['CUSTO POR DIA ÚTIL', money(dailyCost()), 'Fixo + salários e contratos']])}${panelTab === 'ledger' ? `<div class="ledger">${state.ledger.slice(0, 35).map((l) => `<div class="ledger-row"><span class="ledger-icon ${l.amount >= 0 ? 'positive' : ''}">${icon(l.amount >= 0 ? 'trend' : 'wallet')}</span><div><strong>${escape(l.label)}</strong><small>Dia ${l.day}</small></div><b class="${l.amount >= 0 ? 'positive-text' : ''}">${l.amount >= 0 ? '+' : '−'}${money(Math.abs(l.amount))}</b></div>`).join('')}</div>` : panelTab === 'credit' ? `<article class="loan-card"><h3>Crédito de emergência</h3><p class="muted">Uma única linha de R$ 2.000 para a empresa. O saldo cobra 2% de juros a cada 28 dias e compromete sua reserva futura. O empréstimo ajuda a atravessar um atraso, mas não substitui contratos saudáveis.</p>${stats([['SALDO DO EMPRÉSTIMO', money(balance), 'Juros de 2% por ciclo financeiro'], ['DIAS NO VERMELHO', state.consecutiveNegativeDays || 0, '60 dias seguidos encerram a empresa']])}<div class="action-grid"><button class="primary-button" data-action="take-loan" ${state.loan?.taken ? 'disabled' : ''}>${state.loan?.taken ? 'Crédito inicial utilizado' : 'Contratar R$ 2.000'}</button><button class="secondary-button" data-action="repay-loan" ${balance <= 0 ? 'disabled' : ''}>Quitar ${money(balance)}</button></div></article>` : `<h3 class="subheading">Recebimentos previstos</h3>${receivables.length ? receivables.map((r) => `<article class="receivable"><div><strong>${escape(r.client)}</strong><small>${r.dueDay < state.day ? 'Pagamento atrasado' : 'Previsto'} · D${r.dueDay}</small></div><b>${money(r.amount)}</b>${r.dueDay <= state.day ? `<button class="secondary-button compact" data-collect="${escape(r.projectId)}">Cobrar cliente</button>` : ''}</article>`).join('') : '<div class="empty-state">Nenhuma nota a receber. O comercial encontra contratos e o quadro acompanha as entregas.</div>'}<div class="concept-note">${icon('wallet')}<p>Custos fixos continuam no fim de semana. A folha é paga nos dias úteis. Contratos competitivos, padrão e premium recebem em D+2, D+3 e D+5 após a entrega.</p></div>`}`;
+    const office = getOfficeOverview(state);
+    return `${tabs([['main', 'Caixa & recebimentos'], ['ledger', 'Movimentações'], ['office', 'Custos do espaço'], ['credit', 'Reserva & crédito']])}${stats([['CAIXA', money(state.cash), `${Math.max(0, Math.floor(state.cash / dailyCost()))} dias de fôlego estimado`], ['A RECEBER', money(receivables.reduce((sum, r) => sum + r.amount, 0)), 'Entregar e receber são momentos diferentes'], ['CUSTO POR DIA ÚTIL', money(dailyCost()), 'Aluguel + folha + provisão de manutenção']])}${panelTab === 'office' ? officeCostContent(office) : panelTab === 'ledger' ? `<div class="ledger">${state.ledger.slice(0, 35).map((l) => `<div class="ledger-row"><span class="ledger-icon ${l.amount >= 0 ? 'positive' : ''}">${icon(l.amount >= 0 ? 'trend' : 'wallet')}</span><div><strong>${escape(l.label)}</strong><small>Dia ${l.day}</small></div><b class="${l.amount >= 0 ? 'positive-text' : ''}">${l.amount >= 0 ? '+' : '−'}${money(Math.abs(l.amount))}</b></div>`).join('')}</div>` : panelTab === 'credit' ? `<article class="loan-card"><h3>Crédito de emergência</h3><p class="muted">Uma única linha de R$ 2.000 para a empresa. O saldo cobra 2% de juros a cada 28 dias e compromete sua reserva futura. O empréstimo ajuda a atravessar um atraso, mas não substitui contratos saudáveis.</p>${stats([['SALDO DO EMPRÉSTIMO', money(balance), 'Juros de 2% por ciclo financeiro'], ['DIAS NO VERMELHO', state.consecutiveNegativeDays || 0, '60 dias seguidos encerram a empresa']])}<div class="action-grid"><button class="primary-button" data-action="take-loan" ${state.loan?.taken ? 'disabled' : ''}>${state.loan?.taken ? 'Crédito inicial utilizado' : 'Contratar R$ 2.000'}</button><button class="secondary-button" data-action="repay-loan" ${balance <= 0 ? 'disabled' : ''}>Quitar ${money(balance)}</button></div></article>` : `<h3 class="subheading">Recebimentos previstos</h3>${receivables.length ? receivables.map((r) => `<article class="receivable"><div><strong>${escape(r.client)}</strong><small>${r.dueDay < state.day ? 'Pagamento atrasado' : 'Previsto'} · D${r.dueDay}</small></div><b>${money(r.amount)}</b>${r.dueDay <= state.day ? `<button class="secondary-button compact" data-collect="${escape(r.projectId)}">Cobrar cliente</button>` : ''}</article>`).join('') : '<div class="empty-state">Nenhuma nota a receber. O comercial encontra contratos e o quadro acompanha as entregas.</div>'}<div class="concept-note">${icon('wallet')}<p>Aluguel continua no fim de semana. A folha é paga nos dias úteis; computadores e salas têm manutenção a cada 28 dias. Contratos competitivos, padrão e premium recebem em D+2, D+3 e D+5 após a entrega.</p></div>`}`;
   }
   if (action === 'team') {
-    return `${tabs([['main', 'Equipe & responsabilidades'], ['candidates', 'Entrevistas & vagas']])}${panelTab === 'candidates' ? `<p class="muted">Conhecer a pessoa custa 1h de qualidade e gestão. Planeje sua rotina no computador antes de entrevistar.</p>${CANDIDATES.filter((c) => !state.employees.some((e) => e.id === c.id)).map((c) => { const interview = state.interviews?.[c.id]; return `<article class="person-card"><div class="person-top">${avatar(c.color, 52, c.name)}<div><h3>${escape(c.name)}</h3><p>${escape(c.role)}</p></div><span class="trait-pill">${money(c.salary)}/mês</span></div><p class="muted">${escape(c.trait)}</p>${interview ? `<div class="interview-note"><strong>Entrevista concluída · ${Math.round(interview.score)}/100</strong><p>${escape(interview.strength)}</p><small>${escape(interview.risk)}</small></div>` : `<button class="secondary-button full" data-interview="${escape(c.id)}">Entrevistar · 1h de gestão</button>`}<div class="hire-actions"><button class="primary-button compact" data-hire="${escape(c.id)}" data-contract="PJ" ${!interview ? 'disabled' : ''}>PJ · ${money(c.salary * 1.15)}/mês</button><button class="secondary-button compact" data-hire="${escape(c.id)}" data-contract="CLT" ${!interview ? 'disabled' : ''}>CLT · ${money(c.salary * 1.7)}/mês</button></div></article>`; }).join('') || '<div class="empty-state">Todos os talentos deste primeiro grupo já fazem parte da sua equipe.</div>'}` : `<article class="person-card"><div class="person-top">${avatar(state.profile.avatarColor, 48, state.profile.name)}<div><h3>${escape(state.profile.name)}</h3><p>Fundador · vende, entrega e decide</p></div><span class="tag">8H / DIA</span></div></article>${state.employees.map((e) => `<article class="person-card"><div class="person-top">${avatar(e.color, 48, e.name)}<div><h3>${escape(e.name)}</h3><p>${escape(e.role)} · ${e.contract}</p></div><span class="status-pill ${e.stress > 60 ? '' : 'success'}">${e.stress > 60 ? 'Sobrecarregado' : 'Em equilíbrio'}</span></div>${stats([['MORAL', `${Math.round(e.morale ?? 80)}%`], ['ESTRESSE', `${Math.round(e.stress ?? 10)}%`], ['FOLHA / DIA', money(e.salary * (e.contract === 'CLT' ? 1.7 : 1.15) / 20)]])}<div class="station-grid"><label class="select-label">Responsabilidade<select data-employee-assignment="${escape(e.id)}"><option value="auto" ${!e.assignment || e.assignment === 'auto' ? 'selected' : ''}>Ajudar na fila prioritária</option>${activeProjects().map((p) => `<option value="${escape(p.id)}" ${e.assignment === p.id ? 'selected' : ''}>${escape(p.title)}</option>`).join('')}</select></label><label class="select-label">Papel no projeto<select data-employee-role="${escape(e.id)}"><option value="delivery" ${e.assignmentRole !== 'quality' ? 'selected' : ''}>Desenvolver</option><option value="quality" ${e.assignmentRole === 'quality' ? 'selected' : ''}>Revisar & testar</option></select></label></div></article>`).join('') || '<div class="empty-state">Você ainda faz tudo. Consulte a aba de entrevistas para trazer a primeira pessoa.</div>'}<div class="concept-note">${icon('people')}<p>Distribuir pessoas entre entregas e revisão muda o resultado. Sobrecarga eleva estresse e reduz produtividade; a equipe não é apenas uma soma de horas.</p></div>`}`;
+    const office = getOfficeOverview(state);
+    return `${tabs([['main', 'Equipe & responsabilidades'], ['candidates', 'Entrevistas & vagas']])}${stats([['POSTOS LIVRES', office.freePosts, 'Mesa e cadeira prontas antes de contratar'], ['EQUIPE', state.employees.length, 'Computadores são atribuídos ao ocupar um posto']])}${panelTab === 'candidates' ? `<p class="muted">Conhecer a pessoa custa 1h de qualidade e gestão. Sem mesa e cadeira livres não há contratação: prepare um posto na loja. A sala do RH melhora a seleção dos talentos.</p>${CANDIDATES.filter((c) => !state.employees.some((e) => e.id === c.id)).map((c) => { const interview = state.interviews?.[c.id]; return `<article class="person-card"><div class="person-top">${avatar(c.color, 52, c.name)}<div><h3>${escape(c.name)}</h3><p>${escape(c.role)}</p></div><span class="trait-pill">${money(c.salary)}/mês</span></div><p class="muted">${escape(c.trait)}</p>${interview ? `<div class="interview-note"><strong>Entrevista concluída · ${Math.round(interview.score)}/100</strong><p>${escape(interview.strength)}</p><small>${escape(interview.risk)}</small></div>` : `<button class="secondary-button full" data-interview="${escape(c.id)}">Entrevistar · 1h de gestão</button>`}<div class="hire-actions"><button class="primary-button compact" data-hire="${escape(c.id)}" data-contract="PJ" ${!interview || office.freePosts <= 0 ? 'disabled' : ''}>PJ · ${money(c.salary * 1.15)}/mês</button><button class="secondary-button compact" data-hire="${escape(c.id)}" data-contract="CLT" ${!interview || office.freePosts <= 0 ? 'disabled' : ''}>CLT · ${money(c.salary * 1.7)}/mês</button></div></article>`; }).join('') || '<div class="empty-state">Todos os talentos deste primeiro grupo já fazem parte da sua equipe.</div>'}` : `<article class="person-card"><div class="person-top">${avatar(state.profile.avatarColor, 48, state.profile.name)}<div><h3>${escape(state.profile.name)}</h3><p>Fundador · vende, entrega e decide</p></div><span class="tag">8H / DIA</span></div></article>${state.employees.map((e) => `<article class="person-card"><div class="person-top">${avatar(e.color, 48, e.name)}<div><h3>${escape(e.name)}</h3><p>${escape(e.role)} · ${e.contract}</p></div><span class="status-pill ${e.stress > 60 ? '' : 'success'}">${e.stress > 60 ? 'Sobrecarregado' : 'Em equilíbrio'}</span></div>${stats([['MORAL', `${Math.round(e.morale ?? 80)}%`], ['ESTRESSE', `${Math.round(e.stress ?? 10)}%`], ['FOLHA / DIA', money(e.salary * (e.contract === 'CLT' ? 1.7 : 1.15) / 20)]])}<div class="station-grid"><label class="select-label">Responsabilidade<select data-employee-assignment="${escape(e.id)}"><option value="auto" ${!e.assignment || e.assignment === 'auto' ? 'selected' : ''}>Ajudar na fila prioritária</option>${activeProjects().map((p) => `<option value="${escape(p.id)}" ${e.assignment === p.id ? 'selected' : ''}>${escape(p.title)}</option>`).join('')}</select></label><label class="select-label">Papel no projeto<select data-employee-role="${escape(e.id)}"><option value="delivery" ${e.assignmentRole !== 'quality' ? 'selected' : ''}>Desenvolver</option><option value="quality" ${e.assignmentRole === 'quality' ? 'selected' : ''}>Revisar & testar</option></select></label></div></article>`).join('') || '<div class="empty-state">Você ainda faz tudo. Consulte a aba de entrevistas para trazer a primeira pessoa.</div>'}<div class="concept-note">${icon('people')}<p>Distribuir pessoas entre entregas e revisão muda o resultado. Sobrecarga eleva estresse e reduz produtividade; a equipe não é apenas uma soma de horas.</p></div>`}`;
   }
-  if (action === 'furniture') {
-    return `<p class="muted">A bancada reúne melhorias que entram no escritório e mudam a rotina. Escolha de acordo com o caixa e o tamanho da equipe.</p><div class="furniture-grid">${FURNITURE.map((f, i) => { const owned = state.furniture.some((o) => (typeof o === 'string' ? o : o.id) === f.id); return `<article class="furniture-card"><div class="furniture-illustration illustration-${i}">${icon(['chair', 'code', 'coffee', 'folder', 'sun'][i % 5])}</div><div class="furniture-info"><h3>${escape(f.name)}</h3><p>${escape(f.description)}</p><div class="opportunity-bottom"><strong>${money(f.price)}</strong><button class="${owned ? 'secondary' : 'primary'}-button compact" data-buy="${escape(f.id)}" ${owned ? 'disabled' : ''}>${owned ? 'No escritório' : 'Comprar'}</button></div></div></article>`; }).join('')}</div>`;
-  }
+  if (action === 'furniture') return renderOfficeStore(state, panelTab === 'main' ? 'overview' : panelTab);
+  if (action === 'meeting' || action === 'ceo') return specialRoomContent(action);
   if (action === 'coffee' || action === 'rest') {
     const coffee = action === 'coffee';
     return `${stats([['SUA ENERGIA', `${Math.round(state.energy)}%`, state.energy < 35 ? 'O cansaço já afeta suas entregas' : 'Energia influencia a produtividade'], ['PAUSAS HOJE', state.dailyActions?.[coffee ? 'coffee' : 'rest'] || 0, coffee ? 'Até 2 cafés por dia' : 'Uma pausa de descanso por dia']])}<div class="rest-illustration">${icon(coffee ? 'coffee' : 'sun')}</div><h3 class="subheading">${coffee ? 'Uma conversa. Um café. Uma nova ideia.' : 'Feche os olhos antes de abrir outra tarefa.'}</h3><p class="muted">${coffee ? 'R$ 15 recuperam energia. Uma cafeteira melhor torna essa pausa mais eficiente.' : 'R$ 40 cobrem um lanche e o descanso. Um lounge confortável melhora essa recuperação e as noites seguintes.'}</p><button class="primary-button full" data-action="${coffee ? 'coffee' : 'rest'}">${coffee ? 'Preparar café · R$ 15' : 'Descansar e fazer um lanche · R$ 40'} ${icon('arrow')}</button>`;
@@ -167,7 +249,7 @@ function stationContent(action) {
     return `${product.unlocked ? `<span class="tag">${product.stage === 'launched' ? 'PRODUTO LANÇADO' : 'IDEIA EM CONSTRUÇÃO'}</span><h3 class="subheading">Sua próxima receita pode ser recorrente.</h3>${stats([['MVP', `${Math.round(product.progress)}%`, 'Construção e validação'], ['PESQUISAS', product.research, 'Duas validações para lançar'], ['MRR', money(product.mrr), `${product.users} usuários`]])}<div class="mini-meter product-meter"><span style="width:${pct(product.progress)}%"></span></div><p class="muted">O laboratório disputa as mesmas horas que pagam seus contratos. Um protótipo usa 2h de desenvolvimento e R$ 300; pesquisar usa 1h de qualidade e R$ 150. Cabe um investimento por dia.</p>${product.stage === 'launched' ? `<div class="discovery-note"><strong>MVP lançado</strong><p>Próxima receita prevista: D${product.nextPaymentDay}. O ciclo de 28 dias cobra R$ 100 de suporte.</p></div>` : ''}<div class="action-grid"><button class="primary-button" data-product="prototype" ${product.stage === 'launched' || product.progress >= 100 || state.dailyActions.product >= 1 ? 'disabled' : ''}>${icon('code')} Construir protótipo</button><button class="secondary-button" data-product="research" ${product.stage === 'launched' || state.dailyActions.product >= 1 ? 'disabled' : ''}>${icon('message')} Validar com usuários</button></div>` : `<div class="product-locked">${icon('lock')}<h3>Conheça clientes antes de apostar.</h3><p>Entregue dois projetos para liberar seu laboratório. As dores que você descobriu podem se transformar em produto.</p><span class="tag">${state.stats.delivered} / 2 ENTREGAS</span></div>`}<div class="product-roadmap"><span>01 · IDEIA</span><span>02 · MVP</span><span>03 · LANÇAMENTO</span><span>04 · RECORRÊNCIA</span></div><div class="concept-note">${icon('bulb')}<p>Serviço paga as contas hoje. Produto consome caixa e capacidade antes de começar a gerar receita. O desafio é escolher o momento.</p></div>`;
   }
   if (action === 'reception') {
-    return `${tabs([['main', pendingSummary ? 'Fechamento & diário' : 'Diário & conquistas'], ['guide', 'Guia & identidade']])}${panelTab === 'guide' ? `<div class="guide-grid"><article>${icon('message')}<h3>Vender exige presença</h3><p>Vá ao comercial. Descubra o escopo e escolha preço, prazo e recebimento.</p></article><article>${icon('code')}<h3>Seu dia tem oito horas</h3><p>Organize a rotina no computador. Caminhar, entrevistar e construir competem com as entregas.</p></article><article>${icon('folder')}<h3>Projetos pedem decisões</h3><p>O quadro mostra progresso, qualidade e imprevistos. Resolva pedidos extras e bloqueios antes que custem prazo.</p></article><article>${icon('people')}<h3>Delegar tem consequências</h3><p>Entreviste no RH e escolha quem desenvolve ou revisa cada projeto. Equipe custa folha e precisa de equilíbrio.</p></article></div><div class="action-grid"><button class="secondary-button" data-action="profile">${avatar(state.profile.avatarColor, 28)} Meu fundador</button><button class="secondary-button" data-action="new-game">Começar outra história</button></div>` : `${pendingSummary ? summaryMarkup() : ''}${stats([['REPUTAÇÃO', `${Math.round(state.reputation)}/100`, 'Sobe com qualidade, cai com atrasos'], ['ENTREGAS', state.stats.delivered, 'Seu portfólio cresce a cada cliente'], ['HORAS DE ENTREGA', `${state.stats.hoursWorked.toFixed(1)}h`, 'Tempo transformado em resultado']])}<ol class="mission-checklist"><li class="done">${icon('check')} Abra as portas da empresa.</li><li class="${state.projects.length ? 'done' : ''}">${icon(state.projects.length ? 'check' : 'target')} Feche seu primeiro contrato no comercial.</li><li class="${state.stats.delivered ? 'done' : ''}">${icon(state.stats.delivered ? 'check' : 'target')} Faça a primeira entrega pelo quadro.</li><li class="${state.employees.length ? 'done' : ''}">${icon(state.employees.length ? 'check' : 'target')} Entreviste e traga uma pessoa pelo RH.</li><li class="${state.product?.unlocked ? 'done' : ''}">${icon(state.product?.unlocked ? 'check' : 'target')} Entregue dois projetos e libere o laboratório.</li></ol><h3 class="subheading">Diário do fundador</h3><div class="activity-list">${state.log.slice(0, 12).map((l) => `<div class="activity"><span class="activity-dot"></span><p>${escape(l.message)}</p><small>D${l.day}</small></div>`).join('')}</div>`}`;
+    return `${tabs([['main', pendingSummary ? 'Fechamento & diário' : 'Diário & conquistas'], ['guide', 'Guia & identidade']])}${panelTab === 'guide' ? `<div class="guide-grid"><article>${icon('message')}<h3>Vender exige presença</h3><p>Vá ao comercial. Descubra o escopo e escolha preço, prazo e recebimento.</p></article><article>${icon('code')}<h3>Seu dia tem oito horas</h3><p>Organize a rotina no computador. Caminhar, entrevistar e construir competem com as entregas.</p></article><article>${icon('folder')}<h3>Projetos pedem decisões</h3><p>O quadro mostra progresso, qualidade e imprevistos. Resolva pedidos extras e bloqueios antes que custem prazo.</p></article><article>${icon('people')}<h3>Delegar tem consequências</h3><p>Entreviste no RH e escolha quem desenvolve ou revisa cada projeto. Equipe custa folha e precisa de equilíbrio. Prepare mesa e cadeira na loja antes de contratar.</p></article><article>${icon('chair')}<h3>O espaço também é estratégia</h3><p>A garagem cresce para uma sala comercial e um andar inteiro. Cada sala disputa espaço e cobra manutenção. Separar setores reduz ruído, mas também a sinergia.</p></article></div><div class="action-grid"><button class="secondary-button" data-action="profile">${avatar(state.profile.avatarColor, 28)} Meu fundador</button><button class="secondary-button" data-action="new-game">Começar outra história</button></div>` : `${pendingSummary ? summaryMarkup() : ''}${stats([['REPUTAÇÃO', `${Math.round(state.reputation)}/100`, 'Sobe com qualidade, cai com atrasos'], ['ENTREGAS', state.stats.delivered, 'Seu portfólio cresce a cada cliente'], ['HORAS DE ENTREGA', `${state.stats.hoursWorked.toFixed(1)}h`, 'Tempo transformado em resultado']])}<ol class="mission-checklist"><li class="done">${icon('check')} Abra as portas da empresa.</li><li class="${state.projects.length ? 'done' : ''}">${icon(state.projects.length ? 'check' : 'target')} Feche seu primeiro contrato no comercial.</li><li class="${state.stats.delivered ? 'done' : ''}">${icon(state.stats.delivered ? 'check' : 'target')} Faça a primeira entrega pelo quadro.</li><li class="${state.employees.length ? 'done' : ''}">${icon(state.employees.length ? 'check' : 'target')} Entreviste e traga uma pessoa pelo RH.</li><li class="${state.product?.unlocked ? 'done' : ''}">${icon(state.product?.unlocked ? 'check' : 'target')} Entregue dois projetos e libere o laboratório.</li></ol><h3 class="subheading">Diário do fundador</h3><div class="activity-list">${state.log.slice(0, 12).map((l) => `<div class="activity"><span class="activity-dot"></span><p>${escape(l.message)}</p><small>D${l.day}</small></div>`).join('')}</div>`}`;
   }
   if (action === 'exit') {
     if (pendingSummary) return summaryMarkup();
@@ -220,11 +302,15 @@ function showProfile(isNew = false) {
     if (isNew) {
       currentStation = null;
       document.querySelector('#station-panel').hidden = true;
+      scene.setPlayerSeated?.(false);
       scene.setInteractionOpen(false);
+      computerApp = 'desktop';
+      computerStoreTab = 'overview';
       panelWasPaused = true;
       state = createGame(profile);
       gameStarted = true;
       elapsed = 0;
+      scene.setState(state);
       scene.resetPlayer();
       state.officePosition = { x: scene.player.x, y: scene.player.y };
     }
@@ -252,8 +338,9 @@ function handleAction(action) {
   if (action === 'end-day' && currentStation === 'exit') finishDay();
   else if (action === 'continue-day') { pendingSummary = null; closeStation(); }
   else if (action === 'prospect' && currentStation === 'sales') run(prospect);
-  else if (action === 'work' && currentStation === 'work') run(performAction, 'work');
-  else if (action === 'review' && currentStation === 'work') run(performAction, 'review');
+  else if (action === 'start-work-session' && currentStation === 'work' && computerApp === 'development') { run(startWorkSession); focusWorkPuzzle(); }
+  else if (action === 'complete-work-session' && currentStation === 'work' && computerApp === 'development') run(completeWorkSession);
+  else if (action === 'review' && currentStation === 'work' && computerApp === 'development') run(performAction, 'review');
   else if (action === 'coffee' && currentStation === 'coffee') run(performAction, 'coffee');
   else if (action === 'rest' && currentStation === 'rest') run(performAction, 'rest');
   else if (action === 'take-loan' && currentStation === 'finance') run(takeLoan);
@@ -267,21 +354,48 @@ document.addEventListener('click', (e) => {
   if (target.dataset.travel) return travelTo(target.dataset.travel);
   if (target.dataset.action) return handleAction(target.dataset.action);
   if (!currentStation || !scene.isNearStation(currentStation)) return;
-  if (target.dataset.stationTab) { panelTab = target.dataset.stationTab; return renderStation(); }
+  if (target.dataset.computerApp && currentStation === 'work' && ['desktop', 'expansion', 'development', 'laboratory'].includes(target.dataset.computerApp)) {
+    if (target.dataset.computerApp === 'development' && computerApp !== 'development') panelTab = 'main';
+    computerApp = target.dataset.computerApp;
+    (document.querySelector('#station-panel .computer-window-content') || document.querySelector('#station-panel .station-body')).scrollTop = 0;
+    renderStation();
+    document.querySelector('#station-panel [data-computer-app=desktop]')?.focus({ preventScroll: true });
+    return;
+  }
+  if (target.dataset.puzzleAnswer && currentStation === 'work' && computerApp === 'development') { run(answerWorkPuzzle, target.dataset.puzzleAnswer); focusWorkPuzzle(); return; }
+  if (target.dataset.stationTab) return selectPanelTab(target.dataset.stationTab, 'data-station-tab');
+  if (target.dataset.storeTab && isStoreOpen()) {
+    if (currentStation === 'work') computerStoreTab = target.dataset.storeTab;
+    return selectPanelTab(target.dataset.storeTab, 'data-store-tab');
+  }
+  if (target.hasAttribute('data-office-expand') && isStoreOpen()) return run(expandOffice);
+  if (target.dataset.officeBuy && isStoreOpen()) return run(purchaseOfficeItem, target.dataset.officeBuy, { workstationId: target.dataset.workstation });
+  if (target.dataset.roomUpgrade && isStoreOpen()) return run(upgradeRoom, target.dataset.roomUpgrade);
+  if (target.dataset.computerUpgrade && isStoreOpen()) return run(upgradeComputer, target.dataset.computerUpgrade);
+  if (target.dataset.roomAction && ['meeting', 'ceo'].includes(currentStation)) {
+    const correctRoom = ['focus', 'team-time'].includes(target.dataset.roomAction) ? 'ceo' : 'meeting';
+    if (currentStation === correctRoom) return run(performRoomAction, target.dataset.roomAction);
+  }
   if (target.dataset.discover && currentStation === 'sales') run(discoverLead, target.dataset.discover);
   else if (target.dataset.negotiate && currentStation === 'sales') run(negotiateProject, target.dataset.negotiate, target.dataset.pricing);
   else if (target.dataset.interview && currentStation === 'team') run(interviewCandidate, target.dataset.interview);
   else if (target.dataset.hire && currentStation === 'team') run(hireEmployee, target.dataset.hire, target.dataset.contract);
-  else if (target.dataset.buy && currentStation === 'furniture') run(buyFurniture, target.dataset.buy);
   else if (target.dataset.event && currentStation === 'board') run(resolveProjectEvent, target.dataset.event, target.dataset.choice);
-  else if (target.dataset.projectPriority && ['work', 'board'].includes(currentStation)) run(setProjectPriority, target.dataset.projectPriority);
+  else if (target.dataset.projectPriority && (currentStation === 'board' || currentStation === 'work' && computerApp === 'development')) run(setProjectPriority, target.dataset.projectPriority);
   else if (target.dataset.collect && currentStation === 'finance') run(collectReceivable, target.dataset.collect);
-  else if (target.dataset.product && currentStation === 'product') run(investProduct, target.dataset.product);
+  else if (target.dataset.product && (currentStation === 'product' || currentStation === 'work' && computerApp === 'laboratory')) run(investProduct, target.dataset.product);
+});
+document.addEventListener('submit', (e) => {
+  if (e.target.id !== 'banner-form') return;
+  e.preventDefault();
+  if (!isStoreOpen() || !scene.isNearStation(currentStation)) return;
+  const values = new FormData(e.target);
+  run(customizeBanner, values.get('bannerText'), values.get('bannerColor'));
 });
 document.addEventListener('change', (e) => {
   if (!currentStation || !scene.isNearStation(currentStation)) return;
   const t = e.target;
-  if (t.dataset.allocation && currentStation === 'work') run(setAllocation, t.dataset.allocation, Number(t.value));
+  if (t.dataset.allocation && currentStation === 'work' && computerApp === 'development') run(setAllocation, t.dataset.allocation, Number(t.value));
   else if (t.dataset.projectMode && currentStation === 'board') run(setProjectMode, t.dataset.projectMode, t.value);
   else if (t.dataset.employeeAssignment && currentStation === 'team') {
     const employee = state.employees.find((p) => p.id === t.dataset.employeeAssignment);
@@ -318,7 +432,7 @@ scene = new OfficeScene(document.querySelector('#office-canvas'), {
 });
 render();
 if (!saved) showProfile(true);
-else toast('Bem-vindo de volta. Sua empresa foi preservada; agora todas as decisões acontecem nos setores.');
+else toast('Bem-vindo de volta. Sua empresa foi preservada. A loja agora permite evoluir o escritório e suas salas.');
 setInterval(() => {
   if (state.paused || currentStation || document.querySelector('.modal-overlay') || state.status === 'bankrupt') return;
   elapsed += state.speed || 1;

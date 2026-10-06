@@ -1,5 +1,9 @@
+import { createOffice, validOffice, getOfficeOverview, getRoomEffects, getComputerMultiplier, getItemEligibility, getExpansionEligibility, getRoomEligibility, getComputerEligibility, getRoomActionEligibility } from './office-progression.js';
+import { WORK_PUZZLE_COUNT, createWorkPuzzles, validWorkSession } from './work-puzzles.js';
+export { OFFICE_STAGES, ROOM_LEVELS, OFFICE_SECTORS, SHOP_ITEMS, COMPUTER_LEVELS, ROOM_ACTIONS, getOfficeOverview, getRoomEffects, getComputerMultiplier, getItemEligibility, getExpansionEligibility, getRoomEligibility, getComputerEligibility, getRoomActionEligibility } from './office-progression.js';
+
 const SAVE_KEY = 'joguinho-save-v1';
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 3;
 const MAX_LEADS = 6;
 const MAX_LOG = 80;
 const MODES = {
@@ -24,8 +28,8 @@ export const CANDIDATES = [
 ];
 
 export const FURNITURE = [
-  { id: 'desk', name: 'Mesa compartilhada', price: 1500, description: 'Mais duas vagas para trazer gente nova para o time.' },
-  { id: 'monitors', name: 'Monitor extra', price: 1800, description: 'Aumenta em 10% a produtividade de todo o escritório.' },
+  { id: 'desk', name: 'Posto completo', price: 1500, description: 'Uma mesa com cadeira e computador básico para trazer uma pessoa para o time, respeitando o espaço disponível.' },
+  { id: 'monitors', name: 'Computadores profissionais', price: 1800, description: 'Leva os computadores dos postos atuais ao nível profissional: 15% mais produtividade e manutenção mensal maior.' },
   { id: 'coffee-machine', name: 'Cafeteira', price: 900, description: 'Cada café recupera 22 de energia em vez de 14.' },
   { id: 'whiteboard', name: 'Quadro de ideias', price: 600, description: 'Cada hora de qualidade melhora ainda mais as entregas.' },
   { id: 'lounge', name: 'Cantinho de descanso', price: 1200, description: 'Descansar recupera mais energia, e as noites ficam melhores.' },
@@ -148,7 +152,9 @@ export function createGame(profile = {}) {
     focusProjectId: null,
     product: { unlocked: false, stage: 'locked', progress: 0, research: 0, mrr: 0, users: 0, nextPaymentDay: 0 },
     loan: { balance: 0, interest: 0.02, nextInterestDay: 0, taken: false },
+    workSession: null,
   };
+  state.office = createOffice(state);
   LEADS.slice(0, 3).forEach((lead) => state.leads.push(leadFromTemplate(state, lead)));
   return state;
 }
@@ -165,12 +171,12 @@ export function saveGame(state) {
 }
 
 // Validate the nested fields used by the simulation before trusting persisted data.
-function validSave(state, legacy = false) {
+function validSave(state, legacy = false, previousVersion = null) {
   const finite = (value) => typeof value === 'number' && Number.isFinite(value);
   const string = (value) => typeof value === 'string';
   const bounded = (value, min, max) => finite(value) && value >= min && value <= max;
   const entries = (value, validate) => Array.isArray(value) && value.length <= 1000 && value.every(validate);
-  if (!state || state.version !== (legacy ? 1 : SAVE_VERSION) || !state.profile || !state.allocation || !state.stats || !state.dailyActions) return false;
+  if (!state || state.version !== (legacy ? 1 : previousVersion || SAVE_VERSION) || !state.profile || !state.allocation || !state.stats || !state.dailyActions) return false;
   if (!string(state.profile.name) || !string(state.profile.company) || !bounded(state.profile.age, 18, 85) || !string(state.profile.avatarColor) || !['technical', 'commercial', 'balanced'].includes(state.profile.trait)) return false;
   if (!Number.isInteger(state.day) || state.day < 1 || !finite(state.cash) || !bounded(state.reputation, 0, 100) || !bounded(state.energy, 0, 100) || !bounded(state.debt, 0, 100)) return false;
   if (!['active', 'bankrupt'].includes(state.status) || typeof state.bankrupt !== 'boolean' || typeof state.paused !== 'boolean' || !bounded(state.speed, 0.1, 20)) return false;
@@ -198,11 +204,16 @@ function validSave(state, legacy = false) {
   if (!state.employees.every((e) => string(e.assignment) && ['delivery', 'quality'].includes(e.assignmentRole) && bounded(e.morale, 0, 100) && bounded(e.stress, 0, 100))) return false;
   if (!state.receivables.every((r) => Number.isInteger(r.paymentDay) && r.paymentDay >= r.dueDay && Number.isInteger(r.followupCount) && bounded(r.followupCount, 0, 1))) return false;
   if (!entries(state.pendingEvents, (e) => e && string(e.id) && string(e.projectId) && ['scope', 'blocker', 'bug'].includes(e.type) && string(e.title) && string(e.description) && Number.isInteger(e.createdDay) && entries(e.options, (o) => o && string(o.id) && string(o.label) && string(o.description) && bounded(o.cost, 0, 1000000) && bounded(o.hours, 0, 8) && ['sales', 'delivery', 'quality', 'none'].includes(o.area))) || state.pendingEvents.length > 1) return false;
+  if (previousVersion === 2) return true;
+  if (!validOffice(state)) return false;
+  if (!validWorkSession(state)) return false;
+  if (!state.employees.every((person) => person.onboardingUntil === undefined || (Number.isInteger(person.onboardingUntil) && bounded(person.onboardingUntil, 0, 100000000)))) return false;
+  if (!state.leads.every((lead) => lead.negotiation === undefined || lead.negotiation === null || (lead.negotiation && Number.isInteger(lead.negotiation.day) && lead.negotiation.day > 0 && Object.hasOwn(PRICING, lead.negotiation.pricing) && bounded(lead.negotiation.chance, 0, 1) && bounded(lead.negotiation.roll, 0, 99) && lead.negotiation.closed === false))) return false;
   return true;
 }
 
 function migrateSave(state) {
-  state.version = SAVE_VERSION;
+  state.version = 2;
   state.interviews = {};
   state.pendingEvents = [];
   state.officePosition = { x: 0, y: 0 };
@@ -230,12 +241,18 @@ export function loadGame() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const saved = JSON.parse(raw);
-    if (!saved || ![1, SAVE_VERSION].includes(saved.version)) return null;
+    if (!saved || ![1, 2, SAVE_VERSION].includes(saved.version)) return null;
     if (saved.version === 1) {
       if (!validSave(saved.state, true)) return null;
       saved.state = migrateSave(saved.state);
-    } else if (!validSave(saved.state)) return null;
+    } else if (!validSave(saved.state, false, saved.version === 2 ? 2 : null)) return null;
+    if (saved.version < SAVE_VERSION) {
+      saved.state.office = createOffice(saved.state, true);
+      saved.state.version = SAVE_VERSION;
+      if (!validSave(saved.state)) return null;
+    }
     // Never start advancing a restored company before the player presses play.
+    if (saved.state.workSession === undefined) saved.state.workSession = null;
     saved.state.paused = true;
     return saved.state;
   } catch {
@@ -247,13 +264,31 @@ export function acceptProject(state, leadId) {
   return negotiateProject(state, leadId, 'standard');
 }
 
+export function getNegotiationChance(state, leadId, pricing = 'standard') {
+  const lead = state.leads.find((item) => item.id === leadId);
+  if (!lead || !Object.hasOwn(PRICING, pricing)) return 0;
+  return clamp(({ discount: 0.94, standard: 0.84, premium: 0.76 })[pricing]
+    + Math.min(0.1, state.reputation * 0.001) + (lead.discovered ? 0.08 : 0)
+    + (state.profile.trait === 'commercial' ? 0.03 : 0) + getRoomEffects(state).salesChanceBonus
+    + (state.office.bonuses.presentationUntil >= state.day ? 0.08 : 0), 0, 0.99);
+}
+
 export function negotiateProject(state, leadId, pricing = 'standard') {
   if (!running(state)) return result(false, 'A empresa encerrou as atividades. Comece uma nova história.');
   const lead = state.leads.find((item) => item.id === leadId);
   if (!lead) return result(false, 'Essa oportunidade já não está disponível.');
   if (!Object.hasOwn(PRICING, pricing)) return result(false, 'Escolha desconto, padrão ou premium.');
+  if (lead.negotiation) return result(false, 'Este cliente já recusou a proposta. Outros contatos terão uma nova negociação.');
   if (pricing === 'premium' && state.reputation < 25 && !lead.discovered) return result(false, 'Faça a descoberta do escopo ou alcance 25 de reputação para justificar um contrato premium.');
   if (activeProjects(state).length >= 3) return result(false, 'Você já tem três projetos ativos. Entregue um antes de assumir outro.');
+  const chance = getNegotiationChance(state, leadId, pricing);
+  const roll = [...lead.id].reduce((total, letter) => total + letter.charCodeAt(0), 0) % 100;
+  state.office.salesActivityHours = Math.min(8, state.office.salesActivityHours + 0.5);
+  if (roll / 100 >= chance) {
+    lead.negotiation = { day: state.day, pricing, chance, roll, closed: false };
+    addLog(state, `${lead.client} recusou a proposta ${pricing === 'premium' ? 'premium' : pricing === 'discount' ? 'com desconto' : 'padrão'}. A chance era de ${Math.round(chance * 100)}%.`);
+    return result(false, `${lead.client} recusou a proposta (${Math.round(chance * 100)}% de chance). Melhore o comercial e a apresentação para os próximos contatos.`, { negotiated: true, chance });
+  }
   const terms = PRICING[pricing];
   const duration = Math.max(3, lead.duration + terms.extraDays);
   const project = {
@@ -283,6 +318,7 @@ export function discoverLead(state, leadId) {
   if (!running(state)) return result(false, 'A empresa está encerrada.');
   const lead = state.leads.find((item) => item.id === leadId);
   if (!lead) return result(false, 'Essa oportunidade já não está disponível.');
+  if (lead.negotiation) return result(false, 'Este contato já encerrou a negociação.');
   if (lead.discovered) return result(false, 'O escopo deste cliente já foi descoberto.');
   if (!spendHours(state, 'sales', 1)) return result(false, 'A descoberta precisa de uma hora disponível de vendas em um dia útil.');
   lead.discovered = true;
@@ -300,7 +336,7 @@ export function interviewCandidate(state, candidateId) {
   if (state.interviews[candidateId]) return result(false, 'Você já entrevistou essa pessoa. Consulte suas anotações.');
   if (state.employees.some((person) => person.id === candidateId)) return result(false, 'Essa pessoa já está no time.');
   if (!spendHours(state, 'quality', 1)) return result(false, 'A entrevista usa uma hora de qualidade em um dia útil.');
-  const interview = { day: state.day, candidateId, score: Math.round(65 + candidate.productivity * 3), strength: candidate.trait, risk: candidateId === 'bia' ? 'Um salário maior exige um pipeline constante.' : candidateId === 'marina' ? 'Entrega menos horas de código, mas ajuda a validar a experiência.' : 'Precisará de revisões para crescer com segurança.' };
+  const interview = { day: state.day, candidateId, score: Math.round(clamp(65 + candidate.productivity * 3 + getRoomEffects(state).candidateScoreBonus, 0, 100)), strength: candidate.trait, risk: candidateId === 'bia' ? 'Um salário maior exige um pipeline constante.' : candidateId === 'marina' ? 'Entrega menos horas de código, mas ajuda a validar a experiência.' : 'Precisará de revisões para crescer com segurança.' };
   state.interviews[candidateId] = interview;
   addLog(state, `Entrevista com ${candidate.name} concluída. A contratação está disponível no RH.`);
   return result(true, `${candidate.name}: ${interview.strength}. ${interview.risk}`, { interview });
@@ -326,11 +362,13 @@ export function hireEmployee(state, candidateId, contract = 'PJ') {
   if (!['PJ', 'CLT'].includes(contract)) return result(false, 'Escolha um contrato PJ ou CLT.');
   if (state.employees.some((person) => person.id === candidateId)) return result(false, `${candidate.name} já faz parte do time.`);
   if (!state.interviews[candidateId]) return result(false, 'Entreviste essa pessoa no RH antes de contratar.');
-  const capacity = hasFurniture(state, 'desk') ? 4 : 2;
-  if (state.employees.length >= capacity) return result(false, 'As mesas estão ocupadas. Compre uma mesa compartilhada para ampliar o time.');
+  const workstation = state.office.workstations.find((post) => post.employeeId === null && post.desk && post.chair && post.computerLevel > 0);
+  if (!workstation) return result(false, 'Não há posto livre com mesa, cadeira e computador. Complete um posto na loja antes de contratar.');
   const dailyCost = round(candidate.salary / 20 * (contract === 'CLT' ? 1.7 : 1.15));
   if (state.cash < dailyCost * 5 + 550) return result(false, 'Reserve caixa para pelo menos cinco dias de trabalho antes de contratar.');
-  state.employees.push({ ...candidate, contract, hiredDay: state.day, assignment: 'auto', assignmentRole: 'delivery', morale: 75, stress: 15 });
+  const selectionBonus = Math.max(0, state.interviews[candidateId].score - Math.round(65 + candidate.productivity * 3)) / 100;
+  state.employees.push({ ...candidate, productivity: round(candidate.productivity * (1 + selectionBonus)), contract, hiredDay: state.day, assignment: 'auto', assignmentRole: 'delivery', morale: 75, stress: 15 });
+  workstation.employeeId = candidateId;
   addLog(state, `${candidate.name} entrou para o time com contrato ${contract}. Custo por dia útil: R$ ${dailyCost.toFixed(2)}.`);
   return result(true, `${candidate.name} já pode começar. O salário é descontado a cada dia útil.`);
 }
@@ -358,10 +396,99 @@ export function buyFurniture(state, itemId) {
   if (!item) return result(false, 'Esse item não está na loja.');
   if (hasFurniture(state, item.id)) return result(false, 'Seu escritório já tem esse item.');
   if (state.cash < item.price) return result(false, 'O caixa ainda não cobre essa compra.');
+  if (item.id === 'desk') {
+    const ready = getItemEligibility(state, 'desk');
+    if (!ready.ok) return result(false, ready.reason);
+    state.office.workstations.push({ id: `post-${state.office.nextWorkstationId++}`, desk: true, chair: true, computerLevel: 1, employeeId: null });
+  } else if (item.id === 'monitors') {
+    state.office.workstations.forEach((post) => { post.computerLevel = Math.max(2, post.computerLevel); });
+  } else {
+    const ready = getItemEligibility(state, item.id);
+    if (!ready.ok) return result(false, ready.reason);
+    if (item.id === 'lounge') state.office.amenities.lounge = true;
+  }
   recordMoney(state, -item.price, item.name);
   state.furniture.push({ ...item, purchasedDay: state.day });
   addLog(state, `${item.name} chegou ao escritório.`);
   return result(true, `${item.name} comprado. ${item.description}`);
+}
+
+export function purchaseOfficeItem(state, id, options = {}) {
+  const allowed = getItemEligibility(state, id, options);
+  if (!allowed.ok) return result(false, allowed.reason);
+  const item = allowed.item;
+  if (id === 'desk') state.office.workstations.push({ id: `post-${state.office.nextWorkstationId++}`, desk: true, chair: false, computerLevel: 1, employeeId: null });
+  else if (id === 'chair') allowed.workstation.chair = true;
+  else if (['meeting', 'ceo'].includes(id)) state.office.special[id] = true;
+  else if (Object.hasOwn(state.office.amenities, id)) state.office.amenities[id] = true;
+  if (FURNITURE.some((entry) => entry.id === id) && !hasFurniture(state, id)) state.furniture.push({ id, purchasedDay: state.day });
+  recordMoney(state, -item.price, `Escritório: ${item.name}`);
+  addLog(state, `${item.name} instalado. ${item.description}`);
+  return result(true, `${item.name} comprado. ${item.description}`, { item });
+}
+
+export function expandOffice(state, targetStage = null) {
+  const allowed = getExpansionEligibility(state);
+  if (!allowed.ok) return result(false, allowed.reason);
+  if (targetStage !== null && targetStage !== allowed.next.id) return result(false, 'O próximo estágio mudou. Consulte a loja novamente.');
+  state.office.stage = allowed.next.id;
+  state.officePosition = { x: 0, y: 0 };
+  recordMoney(state, -allowed.price, `Mudança: ${allowed.next.name}`);
+  addLog(state, `A empresa mudou para ${allowed.next.name}. ${allowed.next.description}`);
+  return result(true, `Mudança concluída: ${allowed.next.name}. O novo aluguel já entra no próximo fechamento.`, { stage: allowed.next });
+}
+
+export function upgradeRoom(state, sectorId, targetLevel = null) {
+  const allowed = getRoomEligibility(state, sectorId);
+  if (!allowed.ok) return result(false, allowed.reason);
+  if (targetLevel !== null && targetLevel !== allowed.next.id) return result(false, 'O nível atual mudou. Consulte a loja novamente.');
+  state.office.rooms[sectorId] = allowed.next.id;
+  recordMoney(state, -allowed.price, `Sala: ${allowed.sector.name} — ${allowed.next.name}`);
+  addLog(state, `${allowed.sector.name}: ${allowed.next.name}. ${allowed.next.description}`);
+  return result(true, `${allowed.sector.name} agora tem ${allowed.next.name.toLowerCase()}.`, { room: allowed.next });
+}
+
+export function upgradeComputer(state, workstationId, targetLevel = null) {
+  const allowed = getComputerEligibility(state, workstationId);
+  if (!allowed.ok) return result(false, allowed.reason);
+  if (targetLevel !== null && Number(targetLevel) !== allowed.next.id) return result(false, 'O computador já mudou de nível. Consulte a loja novamente.');
+  allowed.workstation.computerLevel = allowed.next.id;
+  recordMoney(state, -allowed.price, `Computador: ${workstationId} — ${allowed.next.name}`);
+  addLog(state, `${workstationId} recebeu um computador ${allowed.next.name.toLowerCase()}. A manutenção mensal desse posto passou para R$ ${allowed.next.monthlyMaintenance}.`);
+  return result(true, `Computador ${allowed.next.name.toLowerCase()} instalado neste posto.`, { computer: allowed.next });
+}
+
+export function customizeBanner(state, text, color) {
+  if (!running(state) || !state.office.amenities.banner) return result(false, 'Compre o banner na loja antes de personalizar.');
+  if (typeof text !== 'string' || !text.trim() || text.trim().length > 40 || typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)) return result(false, 'Use um texto de 1 a 40 caracteres e uma cor hexadecimal válida.');
+  state.office.banner = { text: text.trim(), color };
+  return result(true, 'O banner foi atualizado no escritório.');
+}
+
+export function performRoomAction(state, action) {
+  const allowed = getRoomActionEligibility(state, action);
+  if (!allowed.ok) return result(false, allowed.reason);
+  if (!spendHours(state, allowed.area, allowed.hours)) return result(false, 'As horas necessárias já foram usadas hoje.');
+  if (allowed.cost) recordMoney(state, -allowed.cost, `Sala: ${allowed.name}`);
+  state.office.actions[action] = state.day;
+  if (action === 'alignment') {
+    state.debt = round(Math.max(0, state.debt - 3));
+    activeProjects(state).forEach((project) => { project.blockedUntil = Math.max(state.day, project.blockedUntil - 1); });
+    state.office.bonuses.alignmentUntil = state.day + 2;
+  } else if (action === 'presentation') state.office.bonuses.presentationUntil = state.day + 2;
+  else if (action === 'onboarding') {
+    state.employees.filter((person) => state.day - person.hiredDay <= 7).forEach((person) => { person.morale = clamp(person.morale + 10, 0, 100); person.stress = clamp(person.stress - 10, 0, 100); person.onboardingUntil = state.day + 2; });
+    state.office.bonuses.onboardingUntil = state.day + 2;
+  } else if (action === 'focus') {
+    state.energy = clamp(state.energy + 14, 0, 100);
+    state.office.bonuses.focusDay = state.day;
+    state.office.ceoIsolation = Math.min(10, state.office.ceoIsolation + 1);
+  } else {
+    state.office.ceoIsolation = Math.max(0, state.office.ceoIsolation - 2);
+    state.employees.forEach((person) => { person.morale = clamp(person.morale + 3, 0, 100); person.stress = clamp(person.stress - 3, 0, 100); });
+  }
+  addLog(state, `${allowed.name}: ${allowed.description}`);
+  return result(true, `${allowed.name} concluído. ${allowed.hours}h da rotina foram usadas.`);
 }
 
 export function setAllocation(state, key, value) {
@@ -431,6 +558,14 @@ function scheduleProjectEvent(state) {
   if (!project) return;
   const hash = [...project.id].reduce((total, letter) => total + letter.charCodeAt(0), 0);
   const type = ['scope', 'blocker', 'bug'][hash % 3];
+  const effects = getRoomEffects(state);
+  const risk = type === 'bug' ? effects.bugRisk : type === 'blocker' ? Math.min(1, effects.blockerMultiplier) * (state.office.bonuses.alignmentUntil >= state.day ? 0.55 : 1) : 1;
+  const riskRoll = (hash * 17 + 23) % 100;
+  if (riskRoll >= risk * 100) {
+    project.eventTriggered = true;
+    addLog(state, `${project.client}: ${type === 'bug' ? 'a revisão do setor evitou um bug' : 'a sinergia e o alinhamento evitaram um bloqueio'} antes de afetar a entrega.`);
+    return;
+  }
   const definition = EVENT_TYPES[type];
   project.eventTriggered = true;
   state.pendingEvents.push({ id: `${project.id}-event`, projectId: project.id, type, title: definition.title, description: definition.description, createdDay: state.day, options: definition.options.map((option) => ({ ...option })) });
@@ -569,7 +704,7 @@ function completeProject(state, project) {
   const priceFactor = (lateDays > 0 ? 0.9 : 1) * (project.quality < 55 ? 0.85 : 1);
   project.invoiceAmount = Math.round(project.price * priceFactor);
   project.dueDay = state.day + project.paymentDays;
-  state.receivables.push({ projectId: project.id, client: project.client, amount: project.invoiceAmount, dueDay: project.dueDay, paymentDay: project.dueDay + (project.pricing === 'premium' ? 2 : 0), followupCount: 0 });
+  state.receivables.push({ projectId: project.id, client: project.client, amount: project.invoiceAmount, dueDay: project.dueDay, paymentDay: project.dueDay + Math.max(0, (project.pricing === 'premium' ? 2 : 0) - getRoomEffects(state).paymentDelayReduction), followupCount: 0 });
   state.pendingEvents = state.pendingEvents.filter((event) => event.projectId !== project.id);
   const reputationGain = (project.quality >= 80 ? 3 : project.quality >= 65 ? 2 : project.quality >= 50 ? 0 : -3) - (lateDays > 0 ? 2 : 0);
   state.reputation = clamp(state.reputation + reputationGain, 0, 100);
@@ -583,27 +718,112 @@ function completeProject(state, project) {
   return project;
 }
 
-function applyWork(state, project, hours) {
+function applyWork(state, project, hours, employeeId = 'founder') {
   if (!project || project.status !== 'active' || hours <= 0) return 0;
   if (project.blockedUntil > state.day) return 0;
   const mode = MODES[project.mode];
   const energyFactor = 0.55 + state.energy / 100 * 0.45;
   const debtFactor = Math.max(0.55, 1 - state.debt / 160);
-  const furnitureFactor = hasFurniture(state, 'monitors') ? 1.1 : 1;
-  const traitFactor = state.profile.trait === 'technical' ? 1.05 : 1;
+  const furnitureFactor = getComputerMultiplier(state, employeeId);
+  if (furnitureFactor <= 0) return 0;
+  const traitFactor = employeeId === 'founder' && state.profile.trait === 'technical' ? 1.05 : 1;
+  const focusFactor = employeeId === 'founder' && state.office.bonuses.focusDay === state.day ? 1.15 : 1;
   const event = state.pendingEvents.find((item) => item.projectId === project.id);
   const eventFactor = event?.type === 'blocker' ? 0.15 : event?.type === 'bug' ? 0.65 : event ? 0.8 : 1;
-  const output = Math.min(project.hours - project.progress, hours * mode.speed * energyFactor * debtFactor * furnitureFactor * traitFactor * eventFactor);
+  const output = Math.min(project.hours - project.progress, hours * mode.speed * energyFactor * debtFactor * furnitureFactor * traitFactor * eventFactor * focusFactor);
   project.progress = round(Math.min(project.hours, project.progress + output));
-  project.quality = round(clamp(project.quality + output * (mode.quality - (event?.type === 'bug' ? 0.2 : 0)), 0, 100));
+  project.quality = round(clamp(project.quality + output * (mode.quality + getRoomEffects(state).developmentQualityBonus * 0.08 - (event?.type === 'bug' ? 0.2 : 0)), 0, 100));
   state.debt = round(clamp(state.debt + output * mode.debt, 0, 100));
   // Only count the time actually needed to finish; remaining capacity can serve another client.
-  const usedHours = output / (mode.speed * energyFactor * debtFactor * furnitureFactor * traitFactor * eventFactor);
+  const usedHours = output / (mode.speed * energyFactor * debtFactor * furnitureFactor * traitFactor * eventFactor * focusFactor);
   state.stats.hoursWorked = round(state.stats.hoursWorked + usedHours);
   updatePhase(project);
   completeProject(state, project);
   return usedHours;
 }
+
+export function getWorkSession(state) {
+  const session = state.workSession;
+  if (!session) return null;
+  const project = state.projects.find((entry) => entry.id === session.projectId);
+  const puzzle = session.puzzles[session.index];
+  return {
+    id: session.id, projectId: session.projectId, projectTitle: project?.title || 'Projeto', client: project?.client || 'Cliente',
+    day: session.day, hours: session.hours, total: session.total, index: session.index, mistakes: session.mistakes, status: session.status,
+    currentPuzzle: puzzle ? { id: puzzle.id, kind: puzzle.kind, title: puzzle.title, prompt: puzzle.prompt, options: puzzle.options.map((option) => ({ ...option })) } : null,
+    lastFeedback: session.lastFeedback ? { ...session.lastFeedback } : null, completed: session.index === session.total,
+  };
+}
+
+export function getWorkSessionEligibility(state, projectId = null) {
+  const session = state.workSession;
+  const selectedId = projectId || session?.projectId || state.focusProjectId;
+  const project = selectedId ? activeProjects(state).find((entry) => entry.id === selectedId) : activeProjects(state).sort((a, b) => a.deadline - b.deadline)[0];
+  const hours = Math.min(session?.hours ?? 2, 2 - state.dailyActions.workHours, availableHours(state, 'delivery'));
+  const reason = !running(state) ? 'A empresa encerrou as atividades.'
+    : !isWeekday(state.day) ? 'Hoje é fim de semana. A equipe volta na segunda-feira.'
+      : !project ? 'Escolha um projeto ativo antes de desenvolver.'
+        : session && session.day !== state.day ? 'Este bloco pertence a outro dia e já expirou.'
+          : session && project.id !== session.projectId ? 'Conclua o bloco em andamento antes de trocar de projeto.'
+            : project.blockedUntil > state.day ? `Este contrato aguarda o cliente até o dia ${project.blockedUntil}. Resolva o bloqueio antes de desenvolver.`
+              : hours <= 0 ? 'O bloco manual de até 2h ou as horas de entrega de hoje já foram usados.'
+                : session && hours + 0.00000001 < session.hours ? `Este bloco precisa das ${hoursText(session.hours)}h reservadas no início. Restam ${hoursText(hours)}h; restaure a rotina de entrega antes de finalizar.`
+                : state.energy < 10 ? 'Sua energia está muito baixa. Faça uma pausa antes de desenvolver.' : '';
+  return { ok: !reason, reason, hours: Math.max(0, hours), projectId: project?.id || null, project: project || null, resumable: !!session && !reason };
+}
+
+export function startWorkSession(state, projectId = null) {
+  const allowed = getWorkSessionEligibility(state, projectId);
+  if (!allowed.ok) return result(false, allowed.reason);
+  if (state.workSession) return result(true, 'Seu bloco de desenvolvimento foi retomado.', { session: getWorkSession(state) });
+  const id = `work-${state.day}-${allowed.projectId}-${state.dailyActions.work}`;
+  state.workSession = {
+    id, projectId: allowed.projectId, day: state.day, hours: allowed.hours,
+    total: WORK_PUZZLE_COUNT, index: 0, mistakes: 0, answers: [],
+    puzzles: createWorkPuzzles(state, allowed.project, id), lastFeedback: null, status: 'active',
+  };
+  return result(true, 'Resolva cinco decisões rápidas de escritório para concluir este bloco de trabalho.', { session: getWorkSession(state) });
+}
+
+export function answerWorkPuzzle(state, answerId) {
+  const session = state.workSession;
+  if (!session) return result(false, 'Abra um bloco de desenvolvimento antes de responder.');
+  const allowed = getWorkSessionEligibility(state, session.projectId);
+  if (!allowed.ok) return result(false, allowed.reason);
+  if (session.index >= session.total) return result(false, 'As cinco decisões já estão concluídas. Finalize o bloco para registrar o trabalho.');
+  const puzzle = session.puzzles[session.index];
+  const answer = puzzle.options.find((option) => option.id === answerId);
+  if (!answer) return result(false, 'Essa alternativa não pertence à decisão atual.');
+  const correct = answer.id === puzzle.correctAnswerId;
+  session.answers.push({ questionId: puzzle.id, answerId: answer.id, correct });
+  session.index += 1;
+  if (!correct) session.mistakes += 1;
+  session.lastFeedback = { correct, message: `${correct ? 'Boa decisão.' : 'Essa escolha traz um risco.'} ${puzzle.explanation}` };
+  session.status = session.index === session.total ? 'ready' : 'active';
+  return result(true, session.lastFeedback.message, { correct, finished: session.status === 'ready', session: getWorkSession(state) });
+}
+
+export function completeWorkSession(state) {
+  const session = state.workSession;
+  if (!session) return result(false, 'Não há bloco de desenvolvimento para finalizar.');
+  const allowed = getWorkSessionEligibility(state, session.projectId);
+  if (!allowed.ok) return result(false, allowed.reason);
+  if (session.index !== session.total) return result(false, 'Resolva as cinco decisões antes de registrar o trabalho.');
+  const previousQuality = allowed.project.quality;
+  const qualityDelta = 2 - session.mistakes;
+  allowed.project.quality = round(clamp(previousQuality + qualityDelta, 0, 100));
+  const completed = performAction(state, { type: 'work', projectId: session.projectId, hoursLimit: session.hours });
+  if (!completed.ok) {
+    allowed.project.quality = previousQuality;
+    return completed;
+  }
+  const report = { projectId: session.projectId, hours: completed.hours, correct: session.total - session.mistakes, mistakes: session.mistakes, qualityDelta: round(allowed.project.quality - previousQuality) };
+  state.workSession = null;
+  addLog(state, `Bloco de desenvolvimento: ${report.correct}/5 decisões corretas e ${hoursText(report.hours)}h dedicadas a ${allowed.project.client}.`);
+  return result(true, `Bloco concluído: ${report.correct}/5 boas decisões, ${hoursText(report.hours)}h de trabalho registradas.`, { report });
+}
+
+const hoursText = (hours) => Number(hours.toFixed(2)).toLocaleString('pt-BR');
 
 export function performAction(state, action) {
   if (!running(state)) return result(false, 'A empresa encerrou as atividades.');
@@ -633,21 +853,23 @@ export function performAction(state, action) {
       : activeProjects(state).find((item) => item.id === state.focusProjectId) || activeProjects(state).sort((a, b) => a.deadline - b.deadline)[0];
     if (!project) return result(false, 'Aceite um projeto antes de trabalhar.');
     if (project.blockedUntil > state.day) return result(false, `Esse projeto aguarda o acesso do cliente até o dia ${project.blockedUntil}. Trabalhe em outro contrato enquanto isso.`);
-    const hours = Math.min(2 - state.dailyActions.workHours, availableHours(state, 'delivery'));
+    const requestedLimit = typeof action === 'object' && action.hoursLimit !== undefined ? action.hoursLimit : 2;
+    if (typeof requestedLimit !== 'number' || !Number.isFinite(requestedLimit) || requestedLimit <= 0) return result(false, 'O bloco precisa de uma quantidade válida de horas.');
+    const hours = Math.min(requestedLimit, 2 - state.dailyActions.workHours, availableHours(state, 'delivery'));
     if (hours <= 0) return result(false, 'Seu bloco de trabalho manual já foi usado. Avance o dia para continuar.');
     if (state.energy < 10) return result(false, 'Sua energia está muito baixa. Faça uma pausa antes de trabalhar.');
     applyWork(state, project, hours);
     spendHours(state, 'delivery', hours);
     state.dailyActions.workHours = Math.round((state.dailyActions.workHours + hours) * 1000000) / 1000000;
     state.dailyActions.work += 1;
-    return result(true, `${hours}h dedicadas a ${project.title}. Essas horas fazem parte da rotina de hoje.`);
+    return result(true, `${hours}h dedicadas a ${project.title}. Essas horas fazem parte da rotina de hoje.`, { hours });
   }
   if (type === 'review') {
     if (state.dailyActions.review >= 1) return result(false, 'Você já revisou o código hoje.');
     if (availableHours(state, 'quality') < 1) return result(false, 'Reserve uma hora para qualidade antes de revisar.');
     if (state.debt <= 0 && activeProjects(state).length === 0) return result(false, 'Ainda não há código para revisar.');
     state.debt = round(Math.max(0, state.debt - 6));
-    activeProjects(state).forEach((project) => { project.quality = round(clamp(project.quality + 3, 0, 100)); });
+    activeProjects(state).forEach((project) => { project.quality = round(clamp(project.quality + 3 * getRoomEffects(state).reviewMultiplier, 0, 100)); });
     spendHours(state, 'quality', 1);
     state.dailyActions.review += 1;
     return result(true, 'Código revisado: menos dívida técnica e mais qualidade. Uma hora da rotina foi usada.');
@@ -657,9 +879,15 @@ export function performAction(state, action) {
 
 export function advanceDay(state) {
   if (!running(state)) return result(false, 'A empresa encerrou as atividades. Comece uma nova história.');
+  if (state.workSession) {
+    addLog(state, 'O bloco de decisões do computador expirou com o fechamento do dia. Ele não concedeu trabalho manual nem bônus de qualidade.');
+    state.workSession = null;
+  }
   const day = state.day;
   const weekday = isWeekday(day);
-  const summary = { day, hoursWorked: 0, projectsDelivered: 0, revenue: 0, costs: 0, energy: state.energy, weekend: !weekday, travelHours: state.travelHours, productRevenue: 0 };
+  const summary = { day, hoursWorked: 0, projectsDelivered: 0, revenue: 0, costs: 0, energy: state.energy, weekend: !weekday, travelHours: state.travelHours, productRevenue: 0, maintenance: 0, noiseLostHours: 0 };
+  const office = getOfficeOverview(state);
+  const effects = getRoomEffects(state);
   for (const receivable of state.receivables.filter((item) => item.paymentDay <= day)) {
     summary.revenue = round(summary.revenue + receivable.amount);
     receivePayment(state, receivable);
@@ -688,12 +916,16 @@ export function advanceDay(state) {
   if (weekday) {
     const projects = activeProjects(state).sort((a, b) => a.deadline - b.deadline);
     const qualityHours = availableHours(state, 'quality');
-    const qualityBoost = hasFurniture(state, 'whiteboard') ? 4 : 3;
+    const qualityBoost = (hasFurniture(state, 'whiteboard') ? 4 : 3) * effects.reviewMultiplier * (state.office.bonuses.alignmentUntil >= day ? 1.15 : 1);
     projects.forEach((project) => {
       project.quality = round(clamp(project.quality + qualityHours * qualityBoost / projects.length, 0, 100));
     });
     state.debt = round(Math.max(0, state.debt - qualityHours * 2.5));
-    const founderHours = availableHours(state, 'delivery');
+    const rawFounderHours = availableHours(state, 'delivery');
+    const noiseExposure = Math.min(1.5, (state.office.salesActivityHours * 0.35 + availableHours(state, 'sales') * 0.15) * effects.noise);
+    const founderHours = Math.max(0, rawFounderHours - noiseExposure);
+    summary.noiseLostHours = round(rawFounderHours - founderHours);
+    if (summary.noiseLostHours > 0.1) addLog(state, `O ruído do comercial consumiu ${summary.noiseLostHours.toFixed(2)}h de entrega do fundador. Divisórias e salas reduzem essa interferência.`);
     const focused = projects.find((project) => project.id === state.focusProjectId);
     let hours = founderHours;
     for (const project of focused ? [focused] : projects) {
@@ -708,24 +940,34 @@ export function advanceDay(state) {
         person.morale = clamp(person.morale + 2, 0, 100);
         continue;
       }
-      const capacity = person.productivity * (0.7 + person.morale / 100 * 0.3) * (1 - person.stress / 100 * 0.25);
+      const onboardingFactor = person.onboardingUntil >= day ? 1.2 : day - person.hiredDay <= 3 ? 0.85 : 1;
+      const capacity = person.productivity * (0.7 + person.morale / 100 * 0.3) * (1 - person.stress / 100 * 0.25) * onboardingFactor;
       if (person.assignmentRole === 'quality') {
-        target.quality = round(clamp(target.quality + capacity * 1.5, 0, 100));
+        target.quality = round(clamp(target.quality + capacity * 1.5 * getComputerMultiplier(state, person.id) * effects.reviewMultiplier, 0, 100));
         state.debt = round(Math.max(0, state.debt - capacity));
-      } else applyWork(state, target, capacity);
+      } else applyWork(state, target, capacity, person.id);
       const pressure = target.mode === 'fast' ? 7 : target.mode === 'careful' ? 1 : 3;
-      person.stress = round(clamp(person.stress + pressure + (target.deadline - day <= 2 ? 4 : 0) + (state.pendingEvents.some((event) => event.projectId === target.id) ? 3 : 0) - (hasFurniture(state, 'lounge') ? 2 : 0), 0, 100));
+      person.stress = round(clamp(person.stress + pressure + noiseExposure * 2 + (target.deadline - day <= 2 ? 4 : 0) + (state.pendingEvents.some((event) => event.projectId === target.id) ? 3 : 0), 0, 100));
       person.morale = round(clamp(person.morale + (target.mode === 'careful' ? 1 : 0) - person.stress / 35, 0, 100));
     }
     const salesHours = availableHours(state, 'sales');
     state.salesProgress += salesHours * (state.profile.trait === 'commercial' ? 1.05 : 1);
+    if (state.office.amenities.banner) {
+      state.reputation = round(clamp(state.reputation + 0.05, 0, 100));
+      state.salesProgress += 0.25;
+      state.office.bannerProgress = round(state.office.bannerProgress + 0.25);
+      if (state.office.bannerProgress >= 8) {
+        state.office.bannerProgress -= 8;
+        addLog(state, 'O banner da empresa completou mais um ciclo de divulgação e alimentou a chegada de contatos.');
+      }
+    }
     while (state.salesProgress >= 8 && state.leads.length < MAX_LEADS) {
       addLead(state);
       state.salesProgress -= 8;
     }
     state.salesProgress = Math.min(16, state.salesProgress);
     const energySpent = founderHours * 2.5 + salesHours + qualityHours * 1.5;
-    const recovery = hasFurniture(state, 'lounge') ? 13 : 8;
+    const recovery = state.office.amenities.lounge ? 13 : 8;
     state.energy = round(clamp(state.energy - energySpent + recovery, 0, 100));
     scheduleProjectEvent(state);
   } else {
@@ -736,10 +978,24 @@ export function advanceDay(state) {
     });
   }
 
+  const comfortMorale = (state.office.amenities.lounge ? 2 : 0) + (state.office.amenities.floor ? 0.3 : 0) + (state.office.amenities.decor ? 0.5 : 0);
+  const isolationPenalty = state.office.ceoIsolation >= 3 ? Math.min(2, (state.office.ceoIsolation - 2) * 0.3) : 0;
+  state.employees.forEach((person) => {
+    person.morale = round(clamp(person.morale + comfortMorale - isolationPenalty, 0, 100));
+    if (state.office.amenities.lounge) person.stress = round(clamp(person.stress - 3, 0, 100));
+  });
+  if (weekday && isolationPenalty > 0 && state.employees.length) addLog(state, `O isolamento do fundador reduziu em ${isolationPenalty.toFixed(1)} a moral do time. Converse com a equipe na sala do CEO.`);
+
   const payroll = weekday ? state.employees.reduce((total, person) => total + person.salary / 20 * (person.contract === 'CLT' ? 1.7 : 1.15), 0) : 0;
-  recordMoney(state, -110, 'Aluguel, internet e custos fixos');
+  recordMoney(state, -office.dailyRent, 'Aluguel, internet e custos fixos');
+  if (state.office.nextMaintenanceDay <= day) {
+    summary.maintenance = office.monthlyMaintenance;
+    recordMoney(state, -office.monthlyMaintenance, 'Manutenção mensal de computadores e salas');
+    state.office.nextMaintenanceDay = day + 28;
+    addLog(state, `Manutenção mensal: R$ ${office.monthlyMaintenance}. Próximo ciclo no dia ${state.office.nextMaintenanceDay}.`);
+  }
   if (payroll > 0) recordMoney(state, -payroll, 'Salários e contratos');
-  summary.costs = round(110 + payroll + productSupport);
+  summary.costs = round(office.dailyRent + payroll + productSupport + summary.maintenance);
   summary.hoursWorked = round(state.stats.hoursWorked - beforeWorked);
   summary.projectsDelivered = state.stats.delivered - beforeDelivered;
   summary.energy = state.energy;
@@ -766,6 +1022,7 @@ export function advanceDay(state) {
   state.manualQualityHours = 0;
   state.manualSalesHours = 0;
   state.travelHours = 0;
+  state.office.salesActivityHours = 0;
   state.dailyActions = { coffee: 0, rest: 0, work: 0, workHours: 0, review: 0, prospect: 0, product: 0 };
   const message = state.bankrupt
     ? 'Após 60 dias seguidos no vermelho, a empresa encerrou as atividades.'

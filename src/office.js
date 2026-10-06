@@ -1,22 +1,11 @@
+import { createOfficeLayout, roomWalls } from './office-layouts.js';
+
 const WIDTH = 1280;
 const HEIGHT = 820;
 const WALK_SPEED = 185;
-const SPAWN = { x: 618, y: 453 };
+const SPAWN = { x: 697, y: 491 };
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const STATIONS = [
-  { action: 'work', label: 'DESENVOLVIMENTO', verb: 'Sentar e trabalhar', x: 196, y: 342, labelX: 196, labelY: 190, range: 54, bounds: {x: 114, y: 195, w: 162, h: 121} },
-  { action: 'board', label: 'PROJETOS', verb: 'Consultar os projetos', x: 392, y: 210, labelX: 393, labelY: 69, range: 52, bounds: {x: 309, y: 88, w: 135, h: 89} },
-  { action: 'sales', label: 'COMERCIAL', verb: 'Conversar com clientes', x: 636, y: 342, labelX: 636, labelY: 190, range: 54, bounds: {x: 554, y: 197, w: 170, h: 126} },
-  { action: 'finance', label: 'FINANCEIRO', verb: 'Conferir o caixa', x: 1054, y: 342, labelX: 1054, labelY: 190, range: 54, bounds: {x: 966, y: 195, w: 176, h: 126} },
-  { action: 'team', label: 'PESSOAS & CULTURA', verb: 'Cuidar da equipe', x: 569, y: 607, labelX: 573, labelY: 471, range: 54, bounds: {x: 500, y: 487, w: 150, h: 111} },
-  { action: 'furniture', label: 'ARQUITETURA', verb: 'Planejar o escritório', x: 780, y: 607, labelX: 779, labelY: 471, range: 52, bounds: {x: 710, y: 489, w: 136, h: 108} },
-  { action: 'coffee', label: 'CAFÉ', verb: 'Preparar um café', x: 183, y: 594, labelX: 144, labelY: 445, range: 50, bounds: {x: 100, y: 442, w: 92, h: 139} },
-  { action: 'rest', label: 'LOUNGE', verb: 'Fazer uma pausa', x: 332, y: 706, labelX: 339, labelY: 562, range: 56, bounds: {x: 245, y: 593, w: 192, h: 78} },
-  { action: 'product', label: 'LABORATÓRIO', verb: 'Desenvolver um produto', x: 1052, y: 649, labelX: 1052, labelY: 508, range: 54, bounds: {x: 962, y: 522, w: 184, h: 117} },
-  { action: 'reception', label: 'RECEPÇÃO', verb: 'Abrir o diário do fundador', x: 618, y: 730, labelX: 618, labelY: 628, range: 50, bounds: {x: 550, y: 643, w: 144, h: 66} },
-  { action: 'exit', label: 'SAÍDA', verb: 'Encerrar o expediente', x: 1157, y: 733, labelX: 1157, labelY: 686, range: 47, bounds: {x: 1120, y: 700, w: 82, h: 67} },
-];
 
 /** The entire game lives in this office. All interactions require physical travel. */
 export class OfficeScene {
@@ -26,8 +15,9 @@ export class OfficeScene {
     this.onInteract = onInteract;
     this.onMove = onMove;
     this.state = { profile: { name: 'Você', company: 'Seu estúdio', avatarColor: '#e59b54' }, employees: [], furniture: [], energy: 100, reputation: 12, cash: 20000, projects: [], leads: [] };
-    this.player = { ...SPAWN, facing: 'down', moving: false, step: 0 };
-    this.hotspots = STATIONS.map((station) => ({ ...station }));
+    this.player = { ...SPAWN, facing: 'down', moving: false, seated: false, step: 0 };
+    this.layout = createOfficeLayout();
+    this.hotspots = this.layout.stations;
     this.keys = new Set();
     this.pointer = null;
     this.destination = null;
@@ -41,18 +31,8 @@ export class OfficeScene {
     this.travelAccumulator = 0;
     this.zoom = 1;
     this.destroyed = false;
-    this.baseObstacles = [
-      {x: 115, y: 238, w: 158, h: 75}, {x: 290, y: 230, w: 130, h: 76},
-      {x: 289, y: 362, w: 134, h: 76}, {x: 558, y: 239, w: 164, h: 76},
-      {x: 969, y: 239, w: 170, h: 76}, {x: 103, y: 483, w: 82, h: 91},
-      {x: 245, y: 599, w: 188, h: 65}, {x: 502, y: 520, w: 144, h: 76},
-      {x: 715, y: 521, w: 130, h: 74}, {x: 965, y: 559, w: 175, h: 76},
-      {x: 553, y: 654, w: 141, h: 54},
-      {x: 452, y: 191, w: 10, h: 188}, {x: 858, y: 191, w: 10, h: 188},
-      {x: 452, y: 509, w: 10, h: 207}, {x: 858, y: 510, w: 10, h: 182},
-      {x: 83, y: 199, w: 22, h: 35}, {x: 1177, y: 199, w: 22, h: 35},
-    ];
-    this.obstacles = this.baseObstacles.map((obstacle) => ({...obstacle}));
+    this.geometryKey = '';
+    this.obstacles = this.buildObstacles();
     this.background = document.createElement('canvas');
     this.background.width = WIDTH;
     this.background.height = HEIGHT;
@@ -82,31 +62,58 @@ export class OfficeScene {
 
   setState(state) {
     if (!state) return;
+    const wasPositionLoaded = this.positionLoaded;
+    const previousStage = this.layout.stage;
+    const previousStation = this.nearestHotspot()?.action;
     this.state = state;
-    const previous = this.obstacles;
-    this.obstacles = this.baseObstacles.map((obstacle) => ({...obstacle}));
-    if (this.hasFurniture('desk')) this.obstacles.push({x: 115, y: 370, w: 150, h: 76});
-    const changed = previous.length !== this.obstacles.length || this.obstacles.some((o, i) => ['x','y','w','h'].some((key) => o[key] !== previous[i]?.[key]));
+    const office = state.office || {};
+    const key = JSON.stringify([office.stage, office.rooms, office.special, office.amenities, office.workstations?.map((post) => [post.desk, post.chair]), office.banner]);
+    const changed = key !== this.geometryKey;
+    if (changed) {
+      this.geometryKey = key;
+      this.layout = createOfficeLayout(office);
+      this.hotspots = this.layout.stations;
+      this.obstacles = this.buildObstacles();
+      this.renderBackground();
+    }
     if (!this.positionLoaded) {
       this.positionLoaded = true;
       const position = state.officePosition;
-      if (Number.isFinite(position?.x) && Number.isFinite(position?.y)
-        && position.x >= 85 && position.x <= 1195 && position.y >= 195 && position.y <= 756) {
+      if (Number.isFinite(position?.x) && Number.isFinite(position?.y) && position.x > 0 && position.y > 0) {
         this.player.x = position.x;
         this.player.y = position.y;
-      }
+      } else Object.assign(this.player, this.layout.spawn);
     }
     const blocked = !this.canStand(this.player.x, this.player.y);
     if (changed || blocked) this.cancelRoute();
-    if (blocked) {
-      const nearest = this.nearestWalkablePosition(this.player);
-      Object.assign(this.player, nearest || SPAWN, {moving: false});
+    if (blocked || (wasPositionLoaded && previousStage !== this.layout.stage)) {
+      const currentStation = changed && previousStation ? this.getStation(previousStation) : null;
+      const nearest = currentStation && this.canStand(currentStation.x, currentStation.y)
+        ? currentStation : this.nearestWalkablePosition(this.player) || this.layout.spawn;
+      Object.assign(this.player, { x: nearest.x, y: nearest.y, moving: false, seated: false });
       this.keys.clear();
+      this.travelAccumulator = 0;
+      this.onMove({ x: this.player.x, y: this.player.y, distance: 0, station: this.nearestHotspot()?.action || null });
     }
+    this.updateCamera();
+  }
+
+  buildObstacles() {
+    const layout = this.layout;
+    const obstacles = Object.values(layout.tables).map(({ x, y, w, kind }) => ({ x, y, w, h: kind === 'reception' ? 43 : 62 }));
+    layout.posts.forEach((position, i) => { if (this.state.office?.workstations?.[i]?.desk !== false) obstacles.push({ x: position.x, y: position.y, w: position.w, h: 58 }); });
+    obstacles.push({ x: layout.coffee.x, y: layout.coffee.y, w: 81, h: 91 });
+    obstacles.push({ ...layout.lounge });
+    layout.rooms.forEach((room) => obstacles.push(...roomWalls(room)));
+    return obstacles;
   }
 
   getStation(action) { const station = this.hotspots.find((spot) => spot.action === action); return station ? {...station} : null; }
-  isNearStation(action) { const spot = this.getStation(action); return !!spot && this.canStand(this.player.x, this.player.y) && distance(this.player, spot) <= spot.range; }
+  isNearStation(action) {
+    const spot = this.getStation(action);
+    return !!spot && this.canStand(this.player.x, this.player.y)
+      && distance(this.player, spot) <= spot.range && this.canTravelSegment(this.player, spot);
+  }
   getScreenPoint(action) {
     const spot = this.getStation(action);
     if (!spot) return null;
@@ -123,9 +130,27 @@ export class OfficeScene {
     this.interactionOpen = !!open;
     if (open) { this.cancelRoute(); this.keys.clear(); this.player.moving = false; this.reportMovement(true); }
   }
+  founderSeat() {
+    const posts = this.state.office?.workstations || [];
+    const index = Math.max(0, posts.findIndex(post => post.employeeId === 'founder'));
+    const post = posts[index], position = this.layout.posts[index];
+    if (!position || (post && (!post.desk || !post.chair))) return null;
+    return { x: position.x + position.w/2, y: position.y + 65 * (position.w/136) + 28 };
+  }
+  setPlayerSeated(seated) {
+    if (!seated) { this.player.seated = false; this.player.facing = 'down'; return true; }
+    if (!this.isNearStation('work')) return false;
+    const seat = this.founderSeat(), spot = this.getStation('work');
+    if (!seat || !this.canStand(seat.x,seat.y) || distance(seat,spot) > spot.range || !this.canTravelSegment(this.player,seat)) return false;
+    this.cancelRoute(); this.keys.clear();
+    Object.assign(this.player,seat,{seated:true,moving:false,facing:'up'});
+    this.travelAccumulator=0;this.moveReportElapsed=0;this.updateCamera();
+    this.onMove({ x: seat.x, y: seat.y, distance: 0, station: 'work' });
+    return true;
+  }
   setZoom(value) { this.zoom = clamp(Number(value) || 1, 1, 1.6); this.resize(); }
   resetPlayer() {
-    Object.assign(this.player, SPAWN, {facing:'down',moving:false,step:0});
+    Object.assign(this.player, this.layout.spawn, {facing:'down',moving:false,seated:false,step:0});
     this.positionLoaded = true;
     this.cancelRoute(); this.keys.clear(); this.travelAccumulator = 0; this.moveReportElapsed = 0;
     this.updateCamera();
@@ -184,7 +209,8 @@ export class OfficeScene {
     this.canvas.focus({preventScroll:true});
     const point = this.pointerPosition(event), station = this.hotspotAt(point);
     if (station) { this.requestInteraction(station.action); return; }
-    const target = {x:clamp(point.x,85,1195),y:clamp(point.y,195,756)};
+    const walk = this.layout.walk;
+    const target = {x:clamp(point.x,walk.x,walk.x+walk.w),y:clamp(point.y,walk.y,walk.y+walk.h)};
     if (this.canStand(target.x,target.y)) this.walkTo(target);
   }
   walkTo(target, action = null) {
@@ -196,7 +222,8 @@ export class OfficeScene {
   nearestHotspot() { return this.hotspots.filter((spot) => this.isNearStation(spot.action)).sort((a,b) => distance(this.player,a)-distance(this.player,b))[0]; }
   canStand(x,y) {
     const epsilon = 1e-6;
-    return Number.isFinite(x) && Number.isFinite(y) && x>=85 && x<=1195 && y>=195 && y<=756
+    const bounds = this.layout.walk;
+    return Number.isFinite(x) && Number.isFinite(y) && x>=bounds.x && x<=bounds.x+bounds.w && y>=bounds.y && y<=bounds.y+bounds.h
       && !this.obstacles.some((o) => x>o.x-11+epsilon && x<o.x+o.w+11-epsilon && y>o.y-4+epsilon && y<o.y+o.h+5-epsilon);
   }
   canTravelSegment(start,end) {
@@ -210,17 +237,19 @@ export class OfficeScene {
       let result=null, best=Infinity;
       for (let offset=-ring;offset<=ring;offset++) for (const [dx,dy] of [[offset,-ring],[offset,ring],[-ring,offset],[ring,offset]]) {
         const p={x:position.x+dx*8,y:position.y+dy*8}, d=dx*dx+dy*dy;
-        if (d<best && this.canStand(p.x,p.y)) {result=p;best=d;}
+        if (d<best && this.canStand(p.x,p.y) && this.pathGridCell(p)) {result=p;best=d;}
       }
       if(result) return result;
     }
     return null;
   }
   findPath(start,end) {
-    const unit=14, cols=81, rows=41, origin={x:85,y:195};
-    const cell=(p)=>({x:clamp(Math.round((p.x-origin.x)/unit),0,cols-1),y:clamp(Math.round((p.y-origin.y)/unit),0,rows-1)});
+    const unit=12, origin={x:this.layout.walk.x,y:this.layout.walk.y};
+    const cols=Math.floor(this.layout.walk.w/unit)+1, rows=Math.floor(this.layout.walk.h/unit)+1;
     const key=(p)=>p.y*cols+p.x, world=(p)=>({x:origin.x+p.x*unit,y:origin.y+p.y*unit});
-    const a=cell(start), b=cell(end), open=[a], costs=new Map([[key(a),0]]), parents=new Map(), visited=new Set();
+    const a=this.pathGridCell(start), b=this.pathGridCell(end);
+    if (!a || !b) return null;
+    const open=[a], costs=new Map([[key(a),0]]), parents=new Map(), visited=new Set();
     let found=null;
     while(open.length) {
       open.sort((p,q)=>(costs.get(key(p))+Math.hypot(p.x-b.x,p.y-b.y))-(costs.get(key(q))+Math.hypot(q.x-b.x,q.y-b.y)));
@@ -238,8 +267,26 @@ export class OfficeScene {
     if(!found) return null;
     const result=[{...end}];
     while(key(found)!==key(a)) {result.unshift(world(found));found=parents.get(key(found));}
-    // The actual station can be closer to an obstacle than its rounded grid cell.
+    result.unshift(world(a));
     return result;
+  }
+  pathGridCell(point) {
+    const unit=12, origin=this.layout.walk;
+    const cols=Math.floor(origin.w/unit)+1, rows=Math.floor(origin.h/unit)+1;
+    const center={x:clamp(Math.round((point.x-origin.x)/unit),0,cols-1),y:clamp(Math.round((point.y-origin.y)/unit),0,rows-1)};
+    const world=cell=>({x:origin.x+cell.x*unit,y:origin.y+cell.y*unit});
+    for(let ring=0;ring<=3;ring++) {
+      const candidates=[];
+      for(let dy=-ring;dy<=ring;dy++)for(let dx=-ring;dx<=ring;dx++) {
+        if(ring&&Math.max(Math.abs(dx),Math.abs(dy))!==ring)continue;
+        const cell={x:center.x+dx,y:center.y+dy};
+        if(cell.x<0||cell.x>=cols||cell.y<0||cell.y>=rows)continue;
+        const position=world(cell);
+        if(this.canStand(position.x,position.y)&&this.canTravelSegment(point,position))candidates.push(cell);
+      }
+      if(candidates.length)return candidates.sort((a,b)=>distance(point,world(a))-distance(point,world(b)))[0];
+    }
+    return null;
   }
   frame(timestamp) {
     if(this.destroyed) return;
@@ -310,41 +357,45 @@ export class OfficeScene {
     c.clearRect(0,0,WIDTH,HEIGHT);
     const gradient=c.createRadialGradient(640,360,70,640,360,780);gradient.addColorStop(0,'#294738');gradient.addColorStop(1,'#14261e');
     c.fillStyle=gradient;c.fillRect(0,0,WIDTH,HEIGHT);
-    this.ellipse(c,641,777,596,29,'#0e2018');
-    this.rect(c,63,176,1156,604,'#775b3e');this.rect(c,68,181,1148,589,'#e3bd8e');
-    c.save();c.beginPath();c.rect(68,181,1148,589);c.clip();
-    for(let row=0;row<23;row++){
-      const y=181+row*26;this.rect(c,68,y,1148,25,['#dfba88','#e6c396','#dcb480','#e3bd8b'][row%4]);
-      this.rect(c,68,y+25,1148,1,'#c89f72');
-      for(let x=70+(row%2?68:174);x<1215;x+=198){this.rect(c,x,y+1,1,24,'#bf976d');this.rect(c,x+14,y+7,47,1,'#d2a676');this.rect(c,x+80,y+19,42,1,'#cfa373');}
+    const floor = this.layout.floor, improved = !!this.state.office?.amenities?.floor;
+    this.ellipse(c,floor.x+floor.w/2,floor.y+floor.h+6,floor.w/2+14,21,'#0e2018');
+    this.rect(c,floor.x-5,floor.y-5,floor.w+10,floor.h+15,'#775b3e');
+    this.rect(c,floor.x,floor.y,floor.w,floor.h,improved?'#d9d3b6':'#e3bd8e');
+    c.save();c.beginPath();c.rect(floor.x,floor.y,floor.w,floor.h);c.clip();
+    for(let row=0;row<Math.ceil(floor.h/26);row++){
+      const y=floor.y+row*26;
+      this.rect(c,floor.x,y,floor.w,25,(improved?['#c9ceb8','#d6d9c7','#c4cdb9','#d0d4bf']:['#dfba88','#e6c396','#dcb480','#e3bd8b'])[row%4]);
+      this.rect(c,floor.x,y+25,floor.w,1,improved?'#adb79e':'#c89f72');
+      for(let x=floor.x+(row%2?68:174);x<floor.x+floor.w;x+=198){this.rect(c,x,y+1,1,24,improved?'#b1bda5':'#bf976d');this.rect(c,x+14,y+7,47,1,improved?'#c0c8b1':'#d2a676');}
     }
     c.restore();
-    this.rect(c,67,763,1149,9,'#b78a5d');this.rect(c,67,773,1149,8,'#5c4c36');
-    this.rect(c,65,73,1152,106,'#285747');this.rect(c,65,73,1152,5,'#5c8068');
-    this.rect(c,65,165,1152,14,'#214237');this.rect(c,67,179,1149,5,'#b58b5c');
-    for(let x=80;x<1208;x+=39)this.rect(c,x,83,1,74,'#315e4c');
-    this.polygon(c,[[42,91],[65,73],[65,770],[42,788]],'#1b4132');this.rect(c,62,79,5,688,'#3a6851');
-    this.polygon(c,[[42,779],[65,762],[65,777],[42,792]],'#8e6a45');
-    this.drawWindow(c,108,88,163,77);this.drawWindow(c,498,88,179,77);this.drawWindow(c,926,88,139,77);
+    const wallY = floor.y - 106;
+    this.rect(c,floor.x,floor.y+floor.h-7,floor.w,9,'#b78a5d');this.rect(c,floor.x,floor.y+floor.h+2,floor.w,7,'#5c4c36');
+    this.rect(c,floor.x,wallY,floor.w,106,this.layout.stage==='garage'?'#446255':'#285747');this.rect(c,floor.x,wallY,floor.w,5,'#6c8b6c');
+    this.rect(c,floor.x,floor.y-14,floor.w,14,'#214237');this.rect(c,floor.x,floor.y,floor.w,5,'#b58b5c');
+    for(let x=floor.x+14;x<floor.x+floor.w-8;x+=39)this.rect(c,x,wallY+10,1,74,'#315e4c');
+    this.polygon(c,[[floor.x-23,wallY+18],[floor.x,wallY],[floor.x,floor.y+floor.h],[floor.x-23,floor.y+floor.h+18]],'#1b4132');this.rect(c,floor.x-3,wallY+6,5,floor.h+94,'#3a6851');
+    if (this.layout.stage === 'garage') {
+      this.rect(c,floor.x+33,wallY+18,162,68,'#324c3e');
+      for(let i=0;i<5;i++)this.rect(c,floor.x+37,wallY+21+i*12,154,8,'#93a59a');
+      this.rect(c,floor.x+54,wallY+42,8,5,'#5c7566');
+      this.drawWindow(c,floor.x+floor.w-192,wallY+18,151,64);
+    } else {
+      this.drawWindow(c,floor.x+37,wallY+18,154,70);
+      this.drawWindow(c,floor.x+floor.w-237,wallY+18,154,70);
+    }
     c.save();c.globalAlpha=.085;
-    this.polygon(c,[[108,185],[256,185],[541,588],[332,588]],'#fff9d4');
-    this.polygon(c,[[508,185],[661,185],[902,570],[695,570]],'#fff9d4');
-    this.polygon(c,[[931,185],[1057,185],[1210,441],[1141,441]],'#fff9d4');c.restore();
-    this.rug(c,103,216,328,225,'#799078','#6f846c');
-    this.rug(c,493,220,338,171,'#a89b79','#968a6b');
-    this.rug(c,899,220,285,171,'#80968a','#6c8577');
-    this.rug(c,233,582,211,153,'#c68a63','#b57854');
-    this.rug(c,496,510,347,109,'#a5aa86','#929970');
-    this.rug(c,920,542,271,129,'#879e9b','#708784');
-    // The studio's central circulation is intentionally clear and wide.
-    c.font='600 10px system-ui,sans-serif';c.fillStyle='#997b58';c.textAlign='center';
-    c.fillText('C O N S T R U I R   •   C O N V E R S A R   •   C R E S C E R',640,449);
-    this.rect(c,497,458,286,1,'#c29b70');
-    this.rect(c,108,457,112,10,'#a1815c');this.rect(c,111,451,106,7,'#c7a374');
-    this.rect(c,504,481,141,5,'#be9563');this.rect(c,714,482,131,5,'#be9563');
-    this.rect(c,909,490,280,8,'#bc9363');
-    this.rect(c,565,716,107,31,'#46644c');this.rect(c,570,721,97,20,'#79916a');
-    c.fillStyle='#e2dec0';c.font='600 8px monospace';c.fillText('OLÁ, MUNDO.',618,734);
+    this.polygon(c,[[floor.x+floor.w-208,floor.y],[floor.x+floor.w-61,floor.y],[floor.x+floor.w,floor.y+289],[floor.x+floor.w-144,floor.y+289]],'#fff9d4');c.restore();
+    const colors = {development:['#799078','#6f846c'],sales:['#a89b79','#968a6b'],finance:['#80968a','#6c8577'],hr:['#a5aa86','#929970'],meeting:['#9b8874','#8d7c67'],ceo:['#aa9b75','#9d8c65']};
+    this.layout.rooms.forEach(room=>{
+      const [outer,inner]=colors[room.sector];
+      this.rug(c,room.x+9,room.y+10,room.w-18,room.h-18,outer,inner);
+      if(room.level!=='open')this.text(c,room.level==='partition'?'DIVISÓRIAS':room.level==='glass'?'SALA DE VIDRO':'SALA DEDICADA',room.x+room.w/2,room.y+room.h-18,7,'#e4dcc1','center',600);
+    });
+    this.text(c,'C O N S T R U I R   •   C O N V E R S A R   •   C R E S C E R',floor.x+floor.w/2,this.layout.stage==='garage'?507:556,9,'#947754','center',600);
+    this.rect(c,floor.x+floor.w/2-135,this.layout.stage==='garage'?515:564,270,1,'#bd976b');
+    this.text(c,this.layout.name,floor.x+12,wallY-29,11,'#bed0ac','left',700);
+    this.text(c,this.layout.subtitle,floor.x+12,wallY-13,8,'#7f9e82');
   }
   rug(c,x,y,w,h,outer,inner){
     this.rect(c,x+2,y+3,w,h,'#a2856266');this.rect(c,x,y,w,h,outer);this.rect(c,x+6,y+6,w-12,h-12,inner);
@@ -353,7 +404,6 @@ export class OfficeScene {
   }
   at(c,x,y,draw,scale=1){c.save();c.translate(x,y);c.scale(scale,scale);draw();c.restore();}
   text(c,label,x,y,size=11,color='#e0e3c8',align='left',weight=500){c.font=`${weight} ${size}px system-ui,sans-serif`;c.fillStyle=color;c.textAlign=align;c.textBaseline='alphabetic';c.fillText(String(label),x,y);}
-  divider(c,x,y,h){this.rect(c,x-2,y,h>190?15:14,h,'#6b7d5c');this.rect(c,x-3,y-7,16,h,'#3e6451');this.rect(c,x-3,y-7,4,h,'#83916a');for(let offset=19;offset<h;offset+=37)this.rect(c,x+2,y+offset,7,3,'#52735b');this.rect(c,x-3,y+h-8,17,8,'#294e3d');}
   drawProjects(c){
     this.rect(c,307,89,139,88,'#193e30');this.rect(c,305,86,139,86,'#ba9867');this.rect(c,310,91,129,75,'#eee3c6');
     const projects=(this.state.projects||[]).filter((p)=>p.status!=='delivered');
@@ -365,59 +415,35 @@ export class OfficeScene {
     this.text(c,`${projects.length} EM ANDAMENTO`,374,160,7,'#5c6f58','center');
     if(this.hasFurniture('whiteboard')){this.rect(c,398,136,29,20,'#a4bab0');this.rect(c,403,142,17,1,'#687e6c');this.rect(c,405,147,11,1,'#687e6c');}
   }
-  drawWorldData(c){
-    // These are physical displays mounted to the appropriate sector, not a dashboard.
-    this.text(c,(this.state.profile?.company||'Seu estúdio').toUpperCase().slice(0,28),104,52,18,'#d9dcb6','left',700);
-    this.text(c,'SOFTWARE HOUSE  /  DESDE 2026',104,66,8,'#839f83');
-    this.rect(c,704,98,136,64,'#1b3c30');this.rect(c,708,102,128,55,'#ebdfbd');
-    this.text(c,'CAIXA DE ENTRADA',772,114,8,'#61745a','center',700);
-    this.text(c,`${(this.state.leads||[]).length} CONTATOS`,772,136,14,'#4d6f50','center',700);
-    this.text(c,'cada conversa abre uma porta',772,149,6,'#918871','center');
-    this.rect(c,1080,95,116,70,'#163d30');this.rect(c,1084,99,108,62,'#214d3b');
-    this.text(c,'CAIXA DA EMPRESA',1138,114,8,'#a0b68e','center',600);
+  drawWorldData(c) {
+    const floor=this.layout.floor, office=this.state.office||{};
+    this.text(c,(this.state.profile?.company||'Seu estúdio').toUpperCase().slice(0,32),floor.x+12,floor.y-159,20,'#d9dcb6','left',700);
+    if(office.amenities?.banner) {
+      const text=String(office.banner?.text||this.state.profile?.company||'Seu estúdio').slice(0,38);
+      const width=Math.min(310,Math.max(140,text.length*7+30)), x=floor.x+floor.w-width-13, y=floor.y-78;
+      this.rect(c,x-2,y-2,width+4,29,'#d7c697');this.rect(c,x,y,width,25,office.banner?.color||'#63866a');
+      this.text(c,text,x+width/2,y+17,12,'#fff8dd','center',700);
+      this.rect(c,x+8,y+25,2,11,'#d1c498');this.rect(c,x+width-10,y+25,2,11,'#d1c498');
+    }
     const cash=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}).format(this.state.cash||0);
-    this.text(c,cash,1138,137,15,(this.state.cash||0)<0?'#efaf8c':'#e4d99f','center',700);
-    this.text(c,`${(this.state.receivables||[]).length} pagamentos a receber`,1138,152,7,'#8faf93','center');
-    this.rect(c,689,49,151,25,'#1b4234');this.text(c,`REPUTAÇÃO  ${Math.round(this.state.reputation||0)}`,764,65,10,'#d9cf99','center',700);
+    const readout=(kind,label,value,color='#44664b')=>{
+      const t=this.layout.tables[kind]; if(!t)return;
+      const width=Math.min(t.w-10,132), x=t.x+(t.w-width)/2,y=t.y-25;
+      this.rect(c,x-2,y-2,width+4,32,'#8d7752');this.rect(c,x,y,width,29,'#eee2c1');
+      this.text(c,label,t.x+t.w/2,y+9,6,'#797b60','center',700);this.text(c,value,t.x+t.w/2,y+22,10,color,'center',700);
+    };
+    readout('sales','CAIXA DE ENTRADA',`${(this.state.leads||[]).length} contatos`);
+    readout('finance','CAIXA DA EMPRESA',cash,(this.state.cash||0)<0?'#b0674b':'#44664b');
+    readout('team','PESSOAS & CULTURA',`${this.employees().length} pessoas`);
+    readout('product','PRODUTO PRÓPRIO',this.state.product?.stage==='launched'?'MVP no ar':`${Math.round(this.state.product?.progress||0)}% do MVP`);
+    readout('furniture','ESPAÇO DA EMPRESA',`${(office.workstations||[]).filter(p=>p.desk&&p.chair).length} postos prontos`);
+    const post=this.layout.posts[0];
+    if(post) {
+      this.rect(c,post.x+2,post.y-18,40,15,'#e3cb92');this.text(c,`E ${Math.round(this.state.energy??100)}%`,post.x+22,post.y-7,7,'#63764f','center',700);
+    }
     const trophies=Math.min(5,Math.floor((this.state.reputation||0)/20));
-    for(let i=0;i<trophies;i++){this.rect(c,852+i*12,54,7,8,'#d9b56c');this.rect(c,854+i*12,62,3,5,'#d9b56c');this.rect(c,851+i*12,67,9,2,'#b29355');}
-    this.rect(c,104,459,92,25,'#2f4d38');this.text(c,'ENERGIA',112,470,6,'#aebd92');this.rect(c,112,475,75,3,'#193e2a');this.rect(c,112,475,Math.round(75*clamp(this.state.energy??100,0,100)/100),3,'#c1cd8c');
-    this.rect(c,497,489,29,29,'#e9d9b2');this.text(c,this.employees().length,511,501,10,'#60734f','center',700);
-    this.text(c,'PESSOAS',511,510,5,'#60734f','center',600);this.rect(c,501,513,21,2,'#bdbea0');
-    this.rect(c,501,513,Math.round(21*clamp(this.state.teamMorale??this.state.morale??80,0,100)/100),2,'#729c6b');
-    this.rect(c,938,494,10,10,'#a4b17e');this.rect(c,951,494,10,10,'#b2c393');this.rect(c,964,494,10,10,'#d4b080');
-  }
-  drawDraftingTable(c){
-    this.ellipse(c,779,598,76,10,'#b39670');this.rect(c,724,561,8,33,'#7a654b');this.rect(c,828,561,8,33,'#7a654b');
-    this.rect(c,713,524,133,56,'#9e7950');this.rect(c,712,519,135,53,'#d2aa75');this.rect(c,725,527,94,34,'#adc0bc');
-    for(let x=731;x<818;x+=12)this.rect(c,x,529,1,29,'#819f98');for(let y=531;y<560;y+=8)this.rect(c,728,y,88,1,'#819f98');
-    this.rect(c,744,537,40,17,'#dfe1c5');this.rect(c,748,540,14,11,'#89a796');this.rect(c,769,540,10,11,'#89a796');
-    this.rect(c,831,534,3,21,'#b56549');this.rect(c,824,535,3,20,'#e0d097');this.rect(c,725,563,64,3,'#ead5a4');
-    this.rect(c,716,499,22,21,'#c89d6a');this.ellipse(c,727,499,11,4,'#d8b886');
-  }
-  drawReception(c){
-    this.ellipse(c,624,713,78,10,'#b59873');this.rect(c,553,658,141,47,'#52734e');this.rect(c,558,665,132,32,'#365940');
-    this.rect(c,550,650,147,13,'#ddb47b');this.rect(c,555,648,137,6,'#edcc94');
-    this.rect(c,568,638,30,14,'#a57551');this.rect(c,570,639,26,10,'#e1d0a5');this.rect(c,585,638,2,14,'#668468');
-    this.rect(c,617,634,33,16,'#ecdfb4');this.text(c,'DIÁRIO',633,645,6,'#63734e','center',700);
-    this.rect(c,666,631,18,20,'#b17c53');this.at(c,675,631,()=>this.drawPlant(c,0,0,.3));
-    this.text(c,'BEM-VINDO AO ESTÚDIO',624,684,9,'#e2dcad','center',600);
-  }
-  drawExit(c){
-    this.rect(c,1121,704,80,60,'#9c8060');this.rect(c,1125,709,72,53,'#59775a');this.rect(c,1130,714,62,42,'#87a17a');
-    this.rect(c,1140,724,3,21,'#bcc6a0');this.rect(c,1150,724,3,21,'#bcc6a0');this.rect(c,1160,724,3,21,'#bcc6a0');
-    this.polygon(c,[[1180,729],[1180,738],[1190,733]],'#e5e5bc');
-    this.text(c,'ATÉ AMANHÃ',1157,755,7,'#e5e5bd','center',700);
-  }
-  drawLab(c){
-    this.drawDesk(c,965,559,175,'finance');
-    this.rect(c,1081,531,43,27,'#355c54');this.rect(c,1085,535,35,19,'#7caba0');
-    this.rect(c,1097,538,10,13,'#cad9ba');this.rect(c,1100,541,4,7,'#6a9d8e');
-    this.rect(c,969,541,15,17,'#b2c1a5');this.rect(c,973,527,7,16,'#b2c1a5');this.rect(c,973,539,7,9,'#bf9967');
-    this.rect(c,1130,546,10,9,'#b58459');
-    const product=this.state.product;
-    this.text(c,product?.name?String(product.name).slice(0,20):'UMA IDEIA PODE VIRAR PRODUTO',1054,688,9,'#62785c','center',600);
-    const progress=clamp(product?.progress||0,0,100);this.rect(c,1001,696,105,3,'#b69772');this.rect(c,1001,696,Math.round(progress*1.05),3,'#58877a');
+    this.text(c,`REPUTAÇÃO ${Math.round(this.state.reputation||0)}`,floor.x+floor.w-27,floor.y-15,9,'#d9cf99','right',700);
+    for(let i=0;i<trophies;i++){this.rect(c,floor.x+floor.w-26-i*14,floor.y-32,7,8,'#d9b56c');this.rect(c,floor.x+floor.w-24-i*14,floor.y-24,3,5,'#d9b56c');}
   }
   drawWindow(c, x, y, w, h) {
     this.rect(c, x - 5, y - 5, w + 10, h + 12, '#143b30');
@@ -554,38 +580,6 @@ export class OfficeScene {
     c.globalAlpha = 1;
   }
 
-  drawSofa(c) {
-    this.ellipse(c, 712, 433, 103, 10, '#b49670');
-    this.rect(c, 636, 414, 8, 16, '#725e42');
-    this.rect(c, 784, 414, 8, 16, '#725e42');
-    this.rect(c, 623, 359, 178, 65, '#30523d');
-    this.rect(c, 629, 361, 166, 44, '#5b7b50');
-    this.rect(c, 632, 367, 78, 30, '#79935f');
-    this.rect(c, 714, 367, 78, 30, '#71915f');
-    this.rect(c, 631, 393, 161, 27, '#547348');
-    this.rect(c, 635, 395, 74, 19, '#809768');
-    this.rect(c, 714, 395, 74, 19, '#799362');
-    this.rect(c, 621, 380, 14, 43, '#527348');
-    this.rect(c, 791, 380, 14, 43, '#527348');
-    this.rect(c, 621, 380, 14, 5, '#8a9b68');
-    this.rect(c, 791, 380, 14, 5, '#8a9b68');
-    this.rect(c, 644, 374, 27, 25, '#e0bb7d');
-    this.rect(c, 646, 376, 23, 20, '#e8c994');
-    this.rect(c, 755, 378, 28, 22, '#bd7d58');
-    this.rect(c, 757, 380, 24, 16, '#ce9670');
-    for (let y = 400; y < 417; y += 5) this.rect(c, 751, y, 33, 2, '#bb8e6c');
-    if (/lounge|descanso/.test(this.ownedFurniture())) {
-      this.rect(c, 712, 388, 25, 33, '#d8bb8a');
-      for (let y = 391; y < 421; y += 5) this.rect(c, 713, y, 23, 2, '#e9cfa2');
-      this.rect(c, 811, 382, 20, 30, '#9f7c55');
-      this.rect(c, 809, 377, 24, 8, '#d7b382');
-      this.rect(c, 812, 373, 19, 4, '#c57d5a');
-      this.rect(c, 813, 370, 18, 3, '#e6d6b4');
-      this.rect(c, 817, 359, 8, 11, '#c1d3ad');
-      this.ellipse(c, 821, 359, 4, 2, '#78956b');
-    }
-  }
-
   drawPlant(c, x, y, size = 1, color = '#64865a') {
     c.save();
     c.translate(x, y);
@@ -603,15 +597,6 @@ export class OfficeScene {
     c.restore();
   }
 
-  drawLamp(c) {
-    this.ellipse(c, 591, 410, 17, 6, '#b39973');
-    this.rect(c, 581, 405, 21, 5, '#43503c');
-    this.rect(c, 589, 330, 4, 77, '#536047');
-    this.polygon(c, [[577, 301], [603, 301], [613, 334], [568, 334]], '#eddaab');
-    this.rect(c, 571, 332, 39, 4, '#bca476');
-    this.rect(c, 587, 301, 3, 28, '#f7e8bd');
-  }
-
   drawCharacter(c, character, color, isPlayer = false) {
     const x = Math.round(character.x), y = Math.round(character.y);
     const moving = character.moving;
@@ -619,6 +604,21 @@ export class OfficeScene {
     const bob = moving ? Math.round(Math.abs(Math.sin(character.step)) * 2) : 0;
     const up = character.facing === 'up';
     const side = character.facing === 'left' || character.facing === 'right';
+    if (character.seated) {
+      const typing = Math.sin(this.time * 9) > 0 ? 1 : -1;
+      this.ellipse(c,x,y+1,14,4,'#8e86675c');
+      this.rect(c,x-10,y-13,8,11,'#324a4c');this.rect(c,x+2,y-13,8,11,'#324a4c');
+      this.rect(c,x-11,y-4,10,4,'#263c38');this.rect(c,x+2,y-4,10,4,'#263c38');
+      this.rect(c,x-10,y-27,20,17,color||'#d49561');
+      this.polygon(c,[[x-9,y-27],[x-17,y-41],[x-12,y-44],[x-4,y-28]],color||'#d49561');
+      this.polygon(c,[[x+9,y-27],[x+17,y-41],[x+12,y-44],[x+4,y-28]],color||'#d49561');
+      this.rect(c,x-16,y-46+typing,6,6,'#dfaa7a');this.rect(c,x+10,y-46-typing,6,6,'#dfaa7a');
+      this.rect(c,x-4,y-31,8,7,'#d49d75');
+      this.rect(c,x-11,y-49,22,21,'#4a3d30');this.rect(c,x-8,y-52,18,5,'#4a3d30');
+      this.rect(c,x-8,y-46,6,2,'#63503b');this.rect(c,x-7,y-30,14,3,'#4a3d30');
+      if(isPlayer)this.rect(c,x-4,y-23,8,2,'#f2d7aa');
+      return;
+    }
     this.ellipse(c, x, y + 1, 15, 5, '#8e86675c');
     // Chunky shoes, trousers and a sweatshirt. Feet define collision position.
     this.rect(c, x - 10, y - 10 + walk * 2, 8, 10, '#324a4c');
@@ -654,50 +654,108 @@ export class OfficeScene {
   }
 
 
+  drawTable(c,table) {
+    const {x,y,w,kind}=table;
+    this.ellipse(c,x+w/2,y+64,w/2+3,8,'#b3967088');
+    this.rect(c,x+7,y+38,7,25,'#7a654b');this.rect(c,x+w-14,y+38,7,25,'#7a654b');
+    this.rect(c,x,y+8,w,42,kind==='reception'?'#476c4e':'#9e7951');this.rect(c,x-2,y-1,w+4,39,'#d5ae77');
+    this.rect(c,x+2,y+2,w-4,32,'#e1bd87');this.rect(c,x,y+35,w,5,'#bb8e58');
+    if(kind==='furniture') {
+      this.rect(c,x+9,y+7,w-28,23,'#9fb8ad');
+      for(let i=0;i<3;i++)this.rect(c,x+14+i*24,y+11,17,14,'#e1e3bf');
+      this.rect(c,x+w-14,y+8,3,20,'#b97651');
+    } else if(kind==='finance') {
+      this.rect(c,x+12,y+7,38,25,'#e9dfbf');
+      for(let i=0;i<4;i++)this.rect(c,x+17,y+11+i*5,27,1,'#719578');
+      this.rect(c,x+w-37,y+8,23,25,'#43574b');this.rect(c,x+w-34,y+10,17,6,'#c2ceab');
+      for(let i=0;i<9;i++)this.rect(c,x+w-34+(i%3)*6,y+19+Math.floor(i/3)*4,4,2,'#8ea18a');
+    } else if(kind==='product') {
+      this.rect(c,x+11,y+7,w-37,24,'#4d7467');this.rect(c,x+16,y+10,w-47,15,'#a9c6ae');
+      this.text(c,'MVP',x+(w-15)/2,y+22,9,'#466a56','center',700);
+      this.rect(c,x+w-22,y+11,12,19,'#dddac0');
+    } else if(kind==='meeting') {
+      for(const offset of [11,w-31]) {this.rect(c,x+offset,y+8,20,25,'#e9deb9');this.rect(c,x+offset+3,y+13,13,1,'#82a38e');}
+      this.ellipse(c,x+w/2,y+20,13,8,'#7f9a73');this.rect(c,x+w/2-3,y+8,6,12,'#9dac8b');
+      this.drawChair(c,x-13,y+29,'#8c9772');this.drawChair(c,x+w+14,y+29,'#8c9772');
+    } else if(kind==='ceo') {
+      this.rect(c,x+9,y+8,31,24,'#536847');this.rect(c,x+12,y+10,25,18,'#e7d7ac');
+      this.rect(c,x+w-35,y+9,19,18,'#9d7550');this.rect(c,x+w-32,y+11,13,13,'#d4c292');
+      this.text(c,'FOCO',x+w-25,y+20,5,'#627651','center',700);
+      this.drawChair(c,x+w/2,y+78,'#b4a271');
+    } else {
+      this.rect(c,x+10,y+6,34,26,kind==='reception'?'#a67651':'#6e8b69');this.rect(c,x+13,y+8,27,20,'#ecdfb9');
+      this.text(c,kind==='reception'?'DIÁRIO':kind==='sales'?'CLIENTES':'EQUIPE',x+27,y+20,5,'#617453','center',700);
+      this.rect(c,x+w-42,y+10,27,18,'#d2bd8c');this.rect(c,x+w-39,y+12,21,1,'#839277');
+      this.rect(c,x+w-36,y+17,16,1,'#839277');this.rect(c,x+w-33,y+21,12,1,'#839277');
+    }
+  }
+  drawWorkstation(c,position,post,index) {
+    const scale=position.w/136;
+    if(post.desk) this.at(c,position.x,position.y,()=>{
+      this.drawDesk(c,0,0,136,'work');
+      if(post.computerLevel>=2){this.rect(c,99,-41,32,26,'#17362b');this.rect(c,102,-38,26,20,post.computerLevel===3?'#c3dca5':'#8aaca4');this.rect(c,112,-14,7,16,'#335546');}
+      if(post.computerLevel===3){this.rect(c,110,8,20,25,'#395555');this.rect(c,113,12,14,2,'#7cc8bc');this.rect(c,113,18,14,2,'#7cc8bc');}
+      this.rect(c,7,32,18,12,'#314f3d');this.text(c,`N${post.computerLevel||1}`,16,41,7,'#deebc9','center',700);
+    },scale);
+    const x=position.x+position.w/2,y=position.y+65*(position.w/136)+28;
+    if(post.chair)this.drawChair(c,x,y,index===0?'#60806a':'#768b6c');
+    const employee=this.employees().find(person=>person.id===post.employeeId);
+    if(employee) {this.drawCharacter(c,{x,y,facing:'up',seated:true},employee.color||'#8da17f');this.employeeBubble(c,employee,x,y-67);}
+    else if(post.employeeId==='founder')this.text(c,'FUNDADOR',x,y+27,6,'#658163','center',700);
+    else this.text(c,post.chair?'POSTO LIVRE':'FALTA CADEIRA',x,y+25,6,post.chair?'#7a855f':'#a17852','center',600);
+  }
+  drawRoomWall(c,wall) {
+    const {x,y,w,h,room}=wall, glass=room.level==='glass', partition=room.level==='partition';
+    const inside=this.player.x>=room.x&&this.player.x<=room.x+room.w&&this.player.y>=room.y&&this.player.y<=room.y+room.h;
+    c.save();c.globalAlpha=glass?.48:inside&&!partition?.64:1;
+    const height=partition?23:43;
+    this.rect(c,x,y-height,w,h+height,glass?'#9ac3bd':partition?'#6d8669':'#46705a');
+    this.rect(c,x,y-height,w,4,glass?'#d8e6ce':partition?'#aab893':'#a1b48f');
+    this.rect(c,x,y+h-4,w,5,'#335a47');
+    if(glass){this.rect(c,x,y-height,3,h+height,'#739184');if(w>20)for(let i=42;i<w;i+=58)this.rect(c,x+i,y-height,2,h+height,'#648f83');}
+    else if(partition&&h>20)for(let i=18;i<h;i+=29)this.rect(c,x+2,y+i,Math.max(2,w-4),2,'#789270');
+    c.restore();
+  }
+  drawLounge(c) {
+    const {x,y,w,h}=this.layout.lounge, upgraded=this.state.office?.amenities?.lounge;
+    this.ellipse(c,x+w/2,y+h+1,w/2+4,7,'#b5967088');
+    this.rect(c,x+5,y+h-5,5,10,'#735c43');this.rect(c,x+w-10,y+h-5,5,10,'#735c43');
+    this.rect(c,x,y,w,h,upgraded?'#476c4a':'#8c9478');this.rect(c,x+4,y+4,w-8,h-10,upgraded?'#7e9c69':'#b4b78e');
+    this.rect(c,x+4,y+4,w-8,Math.min(12,h/3),upgraded?'#9ab681':'#d0ca9e');
+    if(upgraded){this.rect(c,x+9,y+h-21,Math.min(30,w-18),16,'#e8c997');if(w>80)this.rect(c,x+w-38,y+13,26,20,'#cb966e');}
+  }
   draw() {
     if(!this.ctx||!this.scale)return;
     const c=this.ctx;c.setTransform(this.dpr,0,0,this.dpr,0,0);c.fillStyle='#14271f';c.fillRect(0,0,this.cssWidth,this.cssHeight);
     c.translate(this.offsetX,this.offsetY);c.scale(this.scale,this.scale);c.imageSmoothingEnabled=false;c.drawImage(this.background,0,0);
-    this.drawWorldData(c);this.drawProjects(c);
+    this.at(c,this.layout.board.x-305,this.layout.board.y-86,()=>this.drawProjects(c));
     const nearest=this.nearestHotspot(), hovered=this.pointer?this.hotspotAt(this.pointer):null;
     const selected=this.hotspots.find((spot)=>spot.action===this.pendingAction)||hovered||nearest;
-    if(selected){c.globalAlpha=.19+Math.sin(this.time*3)*.04;this.ellipse(c,selected.x,selected.y,32,13,'#f4e6aa');c.globalAlpha=1;c.strokeStyle='#f5e2a58a';c.lineWidth=1.5;c.beginPath();c.ellipse(selected.x,selected.y,32,13,0,0,Math.PI*2);c.stroke();}
+    if(selected){c.globalAlpha=.19+Math.sin(this.time*3)*.04;this.ellipse(c,selected.x,selected.y,28,11,'#f4e6aa');c.globalAlpha=1;c.strokeStyle='#f5e2a58a';c.lineWidth=1.5;c.beginPath();c.ellipse(selected.x,selected.y,28,11,0,0,Math.PI*2);c.stroke();}
     if(this.destination){
       c.save();c.strokeStyle='#f7e8c259';c.lineWidth=2;c.setLineDash([3,8]);c.beginPath();c.moveTo(this.player.x,this.player.y);this.path?.forEach(p=>c.lineTo(p.x,p.y));c.stroke();c.restore();
       c.strokeStyle='#f2dfb3a1';c.lineWidth=2;c.beginPath();c.ellipse(this.destination.x,this.destination.y,12,5,0,0,Math.PI*2);c.stroke();
     }
-    const props=[
-      {y:379,draw:()=>this.divider(c,452,191,188)},{y:379,draw:()=>this.divider(c,858,191,188)},
-      {y:716,draw:()=>this.divider(c,452,509,207)},{y:692,draw:()=>this.divider(c,858,510,182)},
-      {y:316,draw:()=>this.drawDesk(c,115,238,158)},{y:309,draw:()=>this.drawDesk(c,290,230,130)},
-      {y:440,draw:()=>this.drawDesk(c,289,362,134)},
-      {y:318,draw:()=>this.drawDesk(c,558,239,164,'sales')},{y:318,draw:()=>this.drawDesk(c,969,239,170,'finance')},
-      {y:337,draw:()=>this.drawChair(c,196,337)},{y:335,draw:()=>this.drawChair(c,352,335)},
-      {y:457,draw:()=>this.drawChair(c,355,457)},{y:340,draw:()=>this.drawChair(c,636,340,'#77876a')},
-      {y:340,draw:()=>this.drawChair(c,1054,340,'#5e766d')},
-      {y:598,draw:()=>this.drawDesk(c,502,520,144,'team')},{y:609,draw:()=>this.drawChair(c,570,607,'#87966b')},
-      {y:601,draw:()=>this.drawDraftingTable(c)},
-      {y:578,draw:()=>this.at(c,10,182,()=>this.drawCoffee(c))},
-      {y:671,draw:()=>this.at(c,-376,240,()=>this.drawSofa(c))},
-      {y:640,draw:()=>this.drawLab(c)},{y:656,draw:()=>this.drawChair(c,1052,654,'#678b82')},
-      {y:709,draw:()=>this.drawReception(c)},{y:766,draw:()=>this.drawExit(c)},
-      {y:242,draw:()=>this.drawPlant(c,97,234,.8)},{y:242,draw:()=>this.drawPlant(c,1188,234,.8)},
-      {y:740,draw:()=>this.drawPlant(c,96,733,.9)},{y:740,draw:()=>this.drawPlant(c,909,731,.75)},
-      {y:572,draw:()=>this.drawPlant(c,410,563,.55)},{y:683,draw:()=>this.at(c,-108,267,()=>this.drawLamp(c))},
-      {y:this.player.y,draw:()=>this.drawCharacter(c,this.player,this.state.profile?.avatarColor||'#e3a46b',true)},
-    ];
-    const employees=this.employees();
-    if(employees[0])props.push({y:336,draw:()=>{this.drawCharacter(c,{x:352,y:337,facing:'up'},employees[0].color||'#8da17f');this.employeeBubble(c,employees[0],352,271);}});
-    if(employees[1])props.push({y:458,draw:()=>{this.drawCharacter(c,{x:355,y:458,facing:'up'},employees[1].color||'#8d9fb4');this.employeeBubble(c,employees[1],355,392);}});
-    if(this.hasFurniture('desk')){
-      props.push({y:449,draw:()=>this.drawDesk(c,115,370,150)});props.push({y:463,draw:()=>this.drawChair(c,188,462)});
-      if(employees[2])props.push({y:464,draw:()=>{this.drawCharacter(c,{x:188,y:464,facing:'up'},employees[2].color||'#b68d83');this.employeeBubble(c,employees[2],188,398);}});
+    const props=[];
+    Object.values(this.layout.tables).forEach(table=>props.push({y:table.y+table.h,draw:()=>this.drawTable(c,table)}));
+    const posts=this.state.office?.workstations||[{desk:true,chair:true,computerLevel:1,employeeId:'founder'}];
+    this.layout.posts.forEach((position,i)=>props.push({y:position.y+65*(position.w/136)+28,draw:()=>this.drawWorkstation(c,position,posts[i],i)}));
+    props.push({y:this.layout.coffee.y+94,draw:()=>this.at(c,this.layout.coffee.x-93,this.layout.coffee.y-301,()=>this.drawCoffee(c))});
+    props.push({y:this.layout.lounge.y+this.layout.lounge.h,draw:()=>this.drawLounge(c)});
+    const exit=this.getStation('exit');
+    props.push({y:exit.y+16,draw:()=>{this.rect(c,exit.x-16,exit.y-22,32,33,'#658566');this.rect(c,exit.x-11,exit.y-18,22,23,'#9fb694');this.polygon(c,[[exit.x-5,exit.y-11],[exit.x+5,exit.y-6],[exit.x-5,exit.y]],'#edf1ce');}});
+    this.layout.rooms.forEach(room=>roomWalls(room).forEach(wall=>props.push({y:wall.y+wall.h,draw:()=>this.drawRoomWall(c,wall)})));
+    if(this.state.office?.amenities?.decor) {
+      const floor=this.layout.floor;
+      props.push({y:floor.y+floor.h-15,draw:()=>this.drawPlant(c,floor.x+22,floor.y+floor.h-17,.72)});
+      props.push({y:floor.y+floor.h-15,draw:()=>this.drawPlant(c,floor.x+floor.w-30,floor.y+floor.h-17,.72)});
+      this.rect(c,floor.x+214,floor.y-78,43,37,'#ba9469');this.rect(c,floor.x+218,floor.y-74,35,29,'#afc9a1');this.polygon(c,[[floor.x+222,floor.y-49],[floor.x+232,floor.y-63],[floor.x+248,floor.y-49]],'#739373');
     }
-    if(this.hasFurniture('monitors'))props.push({y:315,draw:()=>{this.rect(c,225,211,40,25,'#28463a');this.rect(c,228,214,34,19,'#8bac92');this.rect(c,242,234,5,9,'#345042');}});
+    props.push({y:this.player.y,draw:()=>this.drawCharacter(c,this.player,this.state.profile?.avatarColor||'#e3a46b',true)});
     props.sort((a,b)=>a.y-b.y).forEach(prop=>prop.draw());
+    this.drawWorldData(c);
     this.hotspots.forEach(spot=>this.drawBadge(c,spot,selected?.action===spot.action));
     this.drawPlayerLabel(c,nearest);
-    for(let i=0;i<14;i++){c.globalAlpha=.2+Math.sin(this.time+i)*.1;this.rect(c,139+i*69+Math.sin(this.time*.4+i)*3,195+(i*39+this.time*5)%332,2,2,'#fff0be');}c.globalAlpha=1;
   }
   employeeBubble(c,employee,x,y){
     const stressed=(employee.stress||0)>65, morale=employee.morale??80;

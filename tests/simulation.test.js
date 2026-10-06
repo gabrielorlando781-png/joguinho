@@ -6,6 +6,7 @@ import {
   prospect, hireEmployee, buyFurniture, setAllocation, setProjectMode, performAction,
   negotiateProject, discoverLead, interviewCandidate, assignEmployee, resolveProjectEvent,
   collectReceivable, investProduct, recordTravel, takeLoan, repayLoan, setProjectPriority,
+  purchaseOfficeItem,
 } from '../src/simulation.js';
 
 const originalStorage = globalThis.localStorage;
@@ -34,6 +35,12 @@ function projectGame() {
 }
 
 function interviewAndHire(state, candidateId, contract = 'PJ') {
+  // Core delivery/accounting tests start in an equipped commercial office.
+  // Dedicated office tests exercise the real purchase and progression gates.
+  state.office.stage = 'commercial';
+  if (!state.office.workstations.some((post) => post.desk && post.chair && post.employeeId === null)) {
+    state.office.workstations.push({ id: `post-${state.office.nextWorkstationId++}`, desk: true, chair: true, computerLevel: 1, employeeId: null });
+  }
   if (state.allocation.quality - state.manualQualityHours < 1) {
     assert.equal(setAllocation(state, 'quality', state.manualQualityHours + 1).ok, true);
   }
@@ -235,7 +242,7 @@ test('weekends stop delivery and payroll while recovering energy and charging fi
   const day = advanceDay(state);
   assert.equal(day.summary.weekend, true);
   assert.equal(day.summary.hoursWorked, 0);
-  assert.equal(day.summary.costs, 110);
+  assert.equal(day.summary.costs, 145);
   assert.equal(project.progress, before);
   assert.equal(state.energy, 55);
   assert.equal(performAction(state, 'work').ok, false);
@@ -253,21 +260,17 @@ test('staff increase delivery capacity and daily payroll distinguishes PJ and CL
   assert.equal(hireEmployee(pj.state, 'bia', 'invalid').ok, false);
   const pjDay = advanceDay(pj.state);
   const cltDay = advanceDay(clt.state);
-  assert.equal(pjDay.summary.costs, 110 + CANDIDATES[0].salary / 20 * 1.15);
-  assert.equal(cltDay.summary.costs, 110 + CANDIDATES[0].salary / 20 * 1.7);
+  assert.equal(pjDay.summary.costs, 145 + CANDIDATES[0].salary / 20 * 1.15);
+  assert.equal(cltDay.summary.costs, 145 + CANDIDATES[0].salary / 20 * 1.7);
   assert.ok(pj.project.progress > 5);
   assert.ok(pjDay.summary.hoursWorked > 5);
 });
 
-test('furniture costs cash once, expands capacity, and has an actual productivity effect', () => {
+test('legacy furniture remains a one-time purchase with an actual productivity effect', () => {
   const state = createGame();
-  interviewAndHire(state, 'lucas');
-  interviewAndHire(state, 'marina');
-  assert.equal(setAllocation(state, 'quality', 3).ok, true);
-  assert.equal(interviewCandidate(state, 'bia').ok, true);
-  assert.equal(hireEmployee(state, 'bia').ok, false);
   assert.equal(buyFurniture(state, 'desk').ok, true);
   assert.equal(state.cash, 20000 - FURNITURE.find((item) => item.id === 'desk').price);
+  assert.equal(interviewCandidate(state, 'bia').ok, true);
   assert.equal(hireEmployee(state, 'bia').ok, true);
   const balance = state.cash;
   assert.equal(buyFurniture(state, 'desk').ok, false);
@@ -362,7 +365,7 @@ test('versioned saves round-trip the company and restore it paused', () => {
   performAction(state, 'work');
   state.paused = false;
   assert.equal(saveGame(state).ok, true);
-  assert.equal(JSON.parse(storage.get('joguinho-save-v1')).version, 2);
+  assert.equal(JSON.parse(storage.get('joguinho-save-v1')).version, 3);
   const restored = loadGame();
   assert.deepEqual(restored, { ...state, paused: true });
   assert.equal(advanceDay(restored).ok, true);
@@ -392,7 +395,7 @@ test('malformed, incompatible, or corrupted nested saves are rejected safely', (
   for (const mutate of mutations) {
     const corrupted = structuredClone(valid);
     mutate(corrupted);
-    storage.set(key, JSON.stringify({ version: 2, state: corrupted }));
+    storage.set(key, JSON.stringify({ version: 3, state: corrupted }));
     assert.equal(loadGame(), null);
   }
 });
@@ -409,10 +412,10 @@ test('storage unavailability or browser storage errors never crash the simulatio
   assert.equal(saveGame(createGame()).ok, false);
 });
 
-test('new companies initialize independent v2 progression, travel, interviews, and credit state', () => {
+test('new companies initialize independent current progression, travel, interviews, and credit state', () => {
   const first = createGame();
   const second = createGame();
-  assert.equal(first.version, 2);
+  assert.equal(first.version, 3);
   assert.deepEqual(first.interviews, {});
   assert.deepEqual(first.pendingEvents, []);
   assert.deepEqual(first.officePosition, { x: 0, y: 0 });
@@ -507,6 +510,9 @@ test('founder priorities concentrate delivery on the selected project and can re
 
 test('hiring requires an interview and interviews share quality time with code review', () => {
   const { state } = projectGame();
+  assert.equal(purchaseOfficeItem(state, 'desk').ok, true);
+  const post = state.office.workstations.find((item) => item.employeeId === null);
+  assert.equal(purchaseOfficeItem(state, 'chair', { workstationId: post.id }).ok, true);
   const before = JSON.stringify(state);
   assert.equal(hireEmployee(state, 'lucas').ok, false);
   assert.equal(interviewCandidate(state, 'missing').ok, false);
@@ -783,7 +789,7 @@ test('loan interest accrues on the outstanding balance and stops after full repa
   assert.equal(state.loan.balance, 0);
 });
 
-test('v1 saves migrate in the original storage key while preserving the company and adding safe v2 defaults', () => {
+test('v1 saves migrate in the original storage key while preserving the company and adding safe current defaults', () => {
   const storage = fakeStorage();
   const { state, project } = projectGame();
   interviewAndHire(state, 'lucas', 'CLT');
@@ -805,7 +811,7 @@ test('v1 saves migrate in the original storage key while preserving the company 
   storage.set('joguinho-save-v1', JSON.stringify({ version: 1, state: legacy }));
   const restored = loadGame();
   assert.ok(restored);
-  assert.equal(restored.version, 2);
+  assert.equal(restored.version, 3);
   assert.equal(restored.paused, true);
   assert.equal(restored.cash, 12345);
   assert.deepEqual(restored.profile, state.profile);
@@ -821,14 +827,14 @@ test('v1 saves migrate in the original storage key while preserving the company 
   assert.equal(restored.loan.balance, 0);
   assert.equal(advanceDay(restored).ok, true);
   assert.equal(saveGame(restored).ok, true);
-  assert.equal(JSON.parse(storage.get('joguinho-save-v1')).version, 2);
+  assert.equal(JSON.parse(storage.get('joguinho-save-v1')).version, 3);
   const corruptLegacy = structuredClone(legacy);
   corruptLegacy.profile = null;
   storage.set('joguinho-save-v1', JSON.stringify({ version: 1, state: corruptLegacy }));
   assert.equal(loadGame(), null);
 });
 
-test('v2 saves reject corrupt new nested fields rather than trusting invalid economy or event data', () => {
+test('current saves reject corrupt nested fields rather than trusting invalid economy or event data', () => {
   const storage = fakeStorage();
   const valid = createGame();
   interviewAndHire(valid, 'lucas');
@@ -847,12 +853,12 @@ test('v2 saves reject corrupt new nested fields rather than trusting invalid eco
   for (const mutate of mutations) {
     const corrupted = structuredClone(valid);
     mutate(corrupted);
-    storage.set('joguinho-save-v1', JSON.stringify({ version: 2, state: corrupted }));
+    storage.set('joguinho-save-v1', JSON.stringify({ version: 3, state: corrupted }));
     assert.equal(loadGame(), null);
   }
 });
 
-test('a v2 save resumes office position, travel, interviewed staff, loan, and a pending project decision', () => {
+test('a current save resumes office position, travel, interviewed staff, loan, and a pending project decision', () => {
   fakeStorage();
   const state = createGame();
   const project = acceptProject(state, state.leads[0].id).project;
