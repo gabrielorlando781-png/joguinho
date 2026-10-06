@@ -641,6 +641,9 @@ test('a premium invoice can be delayed and one follow-up brings the confirmed pa
   finishFirstProject(state, project);
   const receivable = state.receivables[0];
   assert.ok(receivable.paymentDay > receivable.dueDay);
+  // Financial actions consume management hours on business days.
+  while ((receivable.dueDay - 1) % 7 >= 5) receivable.dueDay += 1;
+  receivable.paymentDay = receivable.dueDay + 2;
   while (state.day < receivable.dueDay) advanceDay(state);
   assert.equal(project.paid, false);
   const originalPaymentDay = receivable.paymentDay;
@@ -743,7 +746,7 @@ test('office travel caps at forty-five minutes and reduces the same founder deli
   assert.equal(walking.state.travelHours, 0);
 });
 
-test('working-capital credit is available once, supports partial repayment, and never silently spends excess cash', () => {
+test('working-capital credit is bounded by its revolving limit, supports partial repayment, and never silently spends excess cash', () => {
   const state = createGame();
   assert.equal(takeLoan(state).ok, true);
   assert.equal(state.cash, 22000);
@@ -767,7 +770,7 @@ test('working-capital credit is available once, supports partial repayment, and 
   assert.equal(state.cash, 500);
   assert.equal(state.loan.balance, 0);
   assert.equal(repayLoan(state).ok, false);
-  assert.equal(takeLoan(state).ok, false);
+  assert.equal(takeLoan(state).ok, true);
 });
 
 test('loan interest accrues on the outstanding balance and stops after full repayment', () => {

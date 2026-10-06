@@ -1196,6 +1196,86 @@ def verify_minimal_office(browser, url):
     checks.append('Settings, help and native fullscreen work; larger computer and expansion browser stay inside every viewport')
 
 
+def verify_finance_board(browser, url):
+    fixture = json.loads(subprocess.check_output(['node','--input-type=module','-e', """
+      import {createGame,acceptProject,advanceDay} from './src/simulation.js';
+      const state=createGame({name:'Marina Souza',company:'Aurora Contábil',age:28,trait:'balanced'});
+      const project=acceptProject(state,state.leads[0].id).project;project.eventTriggered=true;
+      while(project.status==='active'||(state.day-1)%7>=5)advanceDay(state);
+      console.log(JSON.stringify({version:3,state}));
+    """], cwd=ROOT,text=True))
+    for viewport in [{'width':1440,'height':1000},{'width':390,'height':844},{'width':320,'height':568},{'width':844,'height':390}]:
+        for stage in ['garage','commercial','floor']:
+            company_fixture=json.loads(json.dumps(fixture)); company_fixture['state']['office']['stage']=stage
+            context,page=saved_context(browser,url,company_fixture,viewport)
+            panel=visit(page,'finance')
+            assert panel.locator('.finance-board').is_visible()
+            assert panel.locator('.finance-board-tabs > button').count()==6
+            assert panel.locator('.finance-board-summary').inner_text().count('dias')>0
+            before=json.dumps(company(page),sort_keys=True)
+            for section in ['main','forecast','receivables','payables','credit','monthly']:
+                panel.locator(f'.finance-board-tabs [data-station-tab="{section}"]').click()
+                assert panel.locator(f'[data-finance-section="{section}"]').is_visible()
+                assert 'NaN' not in panel.inner_text() and 'undefined' not in panel.inner_text()
+                assert page.evaluate('document.body.scrollWidth<=innerWidth')
+            assert json.dumps(company(page),sort_keys=True)==before, 'Reading the board must not spend money or hours.'
+            assert page.evaluate('window.__testedScene.layout.financeBoard.w>0')
+            assert page.evaluate('Object.values(window.__testedScene.layout.tables).filter(t=>t.kind.startsWith("finance")).length')==2
+            if stage=='garage':
+                panel.locator('[data-station-tab="forecast"]').click()
+                assert panel.locator('.finance-chart svg').count()==1
+                assert panel.locator('.finance-day-strip button').count()==30
+                panel.locator('.finance-day-strip button').nth(8).click()
+                assert 'D'+str(company(page)['day']+8) in panel.locator('.finance-section-title').inner_text()
+                page.screenshot(path=str(ARTIFACTS/f'finance-forecast-{viewport["width"]}.png'),animations='disabled')
+                panel.locator('[data-station-tab="main"]').click()
+                page.screenshot(path=str(ARTIFACTS/f'finance-overview-{viewport["width"]}.png'),animations='disabled')
+            context.close()
+    checks.append('Financial room has two desks and a real board; six report sections and 30-day charts fit all maps, desktop, phone and landscape without spending company resources')
+
+    context,page=saved_context(browser,url,fixture)
+    panel=visit(page,'finance')
+    panel.locator('[data-station-tab="credit"]').click()
+    cash=company(page)['cash']
+    panel.locator('[data-finance-form="borrow"] [name="amount"]').fill('1000.10')
+    panel.locator('[data-finance-form="borrow"] button').click()
+    assert company(page)['cash']==round(cash+1000.10,2)
+    assert company(page)['loan']['balance']==1000.10
+    panel.locator('[data-finance-form="repay"] [name="amount"]').fill('500.10')
+    panel.locator('[data-finance-form="repay"] button').click()
+    assert company(page)['loan']['balance']==500
+    panel.locator('.finance-board-tabs [data-station-tab="receivables"]').click()
+    assert panel.locator('[data-finance-action="anticipate"]').is_enabled()
+    before=company(page)
+    quote=page.evaluate("""async()=>{const {getReceivableAction}=await import('/src/finance-model.js');const s=window.__testedScene.state;return getReceivableAction(s,s.receivables[0],'anticipate');}""")
+    panel.locator('[data-finance-action="anticipate"]').click()
+    after=company(page)
+    assert after['cash']==round(before['cash']+quote['net'],2)
+    assert not after['receivables']
+    assert after['manualQualityHours']==before['manualQualityHours']+.5
+    assert panel.locator('[data-finance-action="anticipate"]').count()==0
+    close_station(page);page.reload(wait_until='networkidle');instrument_scene(page)
+    assert not company(page)['receivables'] and company(page)['finance']==after['finance']
+    context.close()
+    checks.append('Financial board credit forms support cents and partial amortization; factoring credits the quoted net once, consumes time and persists the settlement')
+
+    context,page=saved_context(browser,url,fixture)
+    panel=visit(page,'finance');panel.locator('.finance-board-tabs [data-station-tab="receivables"]').click()
+    before=company(page)
+    panel.locator('[data-finance-form="renegotiate"] [name="extension"]').select_option('7')
+    panel.locator('[data-finance-form="renegotiate"] button').click()
+    after=company(page)
+    assert after['cash']==before['cash']
+    assert after['receivables'][0]['dueDay']==before['receivables'][0]['dueDay']+7
+    assert after['receivables'][0]['amount']==round(before['receivables'][0]['amount']*.98,2)
+    assert panel.locator('[data-finance-form="renegotiate"] button').is_disabled()
+    panel.locator('[data-station-tab="monthly"]').click()
+    assert 'Descontos financeiros' in panel.inner_text()
+    page.screenshot(path=str(ARTIFACTS/'finance-monthly.png'),animations='disabled')
+    context.close()
+    checks.append('Renegotiation UI records the promised extension, actual discount and time use, disallows repeating and exposes the expense in the monthly result')
+
+
 def main():
     with socket.socket() as free_port:
         free_port.bind(('127.0.0.1', 0))
@@ -1232,11 +1312,13 @@ def main():
                 browser = p.chromium.launch(executable_path=shutil.which('chromium'), headless=True, args=['--no-sandbox'])
                 try:
                     suite = os.environ.get('GAME_BROWSER_SUITE')
-                    if suite != 'shop':
+                    if suite not in ('shop','finance'):
                         verify_minimal_office(browser, url)
-                    if suite != 'hud':
+                    if suite not in ('shop','hud'):
+                        verify_finance_board(browser, url)
+                    if suite not in ('hud','finance'):
                         verify_browser_shop(browser, url)
-                    if suite not in ('shop', 'hud'):
+                    if suite not in ('shop', 'hud', 'finance'):
                         verify_computer_login(browser, url)
                         run_journey(browser, url)
                         verify_legacy_save(browser, url)

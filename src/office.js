@@ -1,4 +1,5 @@
 import { createOfficeLayout, roomWalls } from './office-layouts.js';
+import { getFinanceOverview } from './finance-model.js';
 
 const WIDTH = 1280;
 const HEIGHT = 820;
@@ -66,6 +67,7 @@ export class OfficeScene {
     const previousStage = this.layout.stage;
     const previousStation = this.nearestHotspot()?.action;
     this.state = state;
+    this.financeSnapshot = getFinanceOverview(state);
     const office = state.office || {};
     const key = JSON.stringify([office.stage, office.rooms, office.special, office.amenities, office.workstations?.map((post) => [post.desk, post.chair]), office.banner]);
     const changed = key !== this.geometryKey;
@@ -431,7 +433,7 @@ export class OfficeScene {
       this.text(c,label,t.x+t.w/2,y+9,6,'#797b60','center',700);this.text(c,value,t.x+t.w/2,y+22,10,color,'center',700);
     };
     readout('sales','CAIXA DE ENTRADA',`${(this.state.leads||[]).length} contatos`);
-    readout('finance','CAIXA DA EMPRESA',cash,(this.state.cash||0)<0?'#b0674b':'#44664b');
+
     readout('team','PESSOAS & CULTURA',`${this.employees().length} pessoas`);
     readout('product','PRODUTO PRÓPRIO',this.state.product?.stage==='launched'?'MVP no ar':`${Math.round(this.state.product?.progress||0)}% do MVP`);
     readout('furniture','ESPAÇO DA EMPRESA',`${(office.workstations||[]).filter(p=>p.desk&&p.chair).length} postos prontos`);
@@ -662,11 +664,14 @@ export class OfficeScene {
       this.rect(c,x+9,y+7,w-28,23,'#9fb8ad');
       for(let i=0;i<3;i++)this.rect(c,x+14+i*24,y+11,17,14,'#e1e3bf');
       this.rect(c,x+w-14,y+8,3,20,'#b97651');
-    } else if(kind==='finance') {
+    } else if(kind==='finance' || kind==='finance-accounts') {
       this.rect(c,x+12,y+7,38,25,'#e9dfbf');
       for(let i=0;i<4;i++)this.rect(c,x+17,y+11+i*5,27,1,'#719578');
       this.rect(c,x+w-37,y+8,23,25,'#43574b');this.rect(c,x+w-34,y+10,17,6,'#c2ceab');
       for(let i=0;i<9;i++)this.rect(c,x+w-34+(i%3)*6,y+19+Math.floor(i/3)*4,4,2,'#8ea18a');
+      this.drawChair(c,x+w/2,y+78,'#7e8c7d');
+      this.text(c,kind==='finance'?'COBRANÇAS':'CONTAS A PAGAR',x+w/2,y+32,5,'#516d61','center',700);
+      this.rect(c,x+6,y+6,6,24,'#ad715d');
     } else if(kind==='product') {
       this.rect(c,x+11,y+7,w-37,24,'#4d7467');this.rect(c,x+16,y+10,w-47,15,'#a9c6ae');
       this.text(c,'MVP',x+(w-15)/2,y+22,9,'#466a56','center',700);
@@ -703,7 +708,7 @@ export class OfficeScene {
     else this.text(c,post.chair?'POSTO LIVRE':'FALTA CADEIRA',x,y+25,6,post.chair?'#7a855f':'#a17852','center',600);
   }
   drawRoomWall(c,wall) {
-    const {x,y,w,h,room}=wall, glass=room.level==='glass', partition=room.level==='partition';
+    const {x,y,w,h,room}=wall, glass=room.level==='glass' || room.baseEnclosed && room.level==='open', partition=room.level==='partition';
     const inside=this.player.x>=room.x&&this.player.x<=room.x+room.w&&this.player.y>=room.y&&this.player.y<=room.y+room.h;
     c.save();c.globalAlpha=glass?.48:inside&&!partition?.64:1;
     const height=partition?23:43;
@@ -726,6 +731,7 @@ export class OfficeScene {
     if(!this.ctx||!this.scale)return;
     const c=this.ctx;c.setTransform(this.dpr,0,0,this.dpr,0,0);c.fillStyle='#14271f';c.fillRect(0,0,this.cssWidth,this.cssHeight);
     c.translate(this.offsetX,this.offsetY);c.scale(this.scale,this.scale);c.imageSmoothingEnabled=false;c.drawImage(this.background,0,0);
+    this.drawFinanceBoard(c);
     this.at(c,this.layout.board.x-305,this.layout.board.y-86,()=>this.drawProjects(c));
     const nearest=this.nearestHotspot(), hovered=this.pointer?this.hotspotAt(this.pointer):null;
     const selected=this.hotspots.find((spot)=>spot.action===this.pendingAction)||hovered||nearest;
@@ -754,6 +760,23 @@ export class OfficeScene {
     this.drawWorldData(c);
     this.hotspots.forEach(spot=>this.drawBadge(c,spot,selected?.action===spot.action));
     this.drawPlayerLabel(c,nearest);
+  }
+  drawFinanceBoard(c) {
+    const board=this.layout.financeBoard;
+    if(!board)return;
+    const {x,y,w,h}=board, data=this.financeSnapshot;
+    this.rect(c,x-3,y-3,w+6,h+6,'#a87e51');
+    this.rect(c,x,y,w,h,'#eee9d2');this.rect(c,x+3,y+3,w-6,h-6,'#f8f4df');
+    this.text(c,'CAIXA',x+8,y+12,6,'#6a7a68','left',700);
+    this.text(c,new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}).format(this.state.cash||0),x+8,y+27,10,this.state.cash<0?'#a64d3c':'#365d51','left',700);
+    this.text(c,`FÔLEGO: ${data?.runwayCapped?'365+':data?.runway??0} DIAS`,x+8,y+43,6,'#566955','left',700);
+    this.text(c,`A RECEBER: ${Math.round(data?.receivableTotal||0).toLocaleString('pt-BR')}`,x+8,y+55,5,'#6f7664');
+    const points=data?.forecast.points||[], gx=x+w*.55, gy=y+12, gw=w*.4, gh=38;
+    const values=points.map(p=>p.balance), high=Math.max(1,...values), low=Math.min(0,...values);
+    this.rect(c,gx,gy+gh,gw,1,'#adb7a1');this.rect(c,gx,gy,1,gh,'#adb7a1');
+    if(points.length){c.beginPath();points.forEach((p,i)=>{const px=gx+i/(points.length-1)*gw,py=gy+gh-(p.balance-low)/(high-low||1)*gh;i?c.lineTo(px,py):c.moveTo(px,py);});c.strokeStyle='#4f7e77';c.lineWidth=1.5;c.stroke();}
+    this.text(c,'FLUXO · 30 DIAS',gx+gw/2,gy+gh+11,5,'#727c68','center',700);
+    this.rect(c,x+6,y+h+1,18,2,'#b57251');this.rect(c,x+27,y+h+1,18,2,'#567b78');
   }
   employeeBubble(c,employee,x,y){
     const stressed=(employee.stress||0)>65, morale=employee.morale??80;

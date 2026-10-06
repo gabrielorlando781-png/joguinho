@@ -1,12 +1,13 @@
 import './style.css';
 import { OfficeScene } from './office.js';
 import { renderOfficeStore } from './store-ui.js';
+import { renderFinanceBoard } from './finance-ui.js';
 import { createShopBrowser, currentShopRoute, navigateShop, parseShopAddress, renderShopBrowser, getShopCatalog } from './shop-browser.js';
 import { renderComputer, renderDevelopmentTerminal } from './computer-ui.js';
 import { getComputerLoginMode, configureComputerPassword, authenticateComputer, parseTerminalCommand } from './computer-session.js';
 import { icon, escape, money, pct, avatar } from './ui.js';
 import { TEST_SAVE_KEY, TEST_MODE_KEY, enableLocalTest, isLocalTestState } from './local-test.js';
-import { CANDIDATES, createGame, loadGame, saveGame, advanceDay, prospect, hireEmployee, setAllocation, setProjectMode, performAction, negotiateProject, discoverLead, interviewCandidate, assignEmployee, resolveProjectEvent, setProjectPriority, collectReceivable, investProduct, recordTravel, takeLoan, repayLoan, getOfficeOverview, getRoomEffects, ROOM_ACTIONS, getRoomActionEligibility, purchaseOfficeItem, expandOffice, upgradeRoom, customizeBanner, upgradeComputer, performRoomAction, getNegotiationChance, getWorkSession, getWorkSessionEligibility, startWorkSession, answerWorkPuzzle, completeWorkSession } from './simulation.js';
+import { CANDIDATES, createGame, loadGame, saveGame, advanceDay, prospect, hireEmployee, setAllocation, setProjectMode, performAction, negotiateProject, discoverLead, interviewCandidate, assignEmployee, resolveProjectEvent, setProjectPriority, collectReceivable, renegotiateReceivable, anticipateReceivable, investProduct, recordTravel, takeLoan, repayLoan, getOfficeOverview, getRoomEffects, ROOM_ACTIONS, getRoomActionEligibility, purchaseOfficeItem, expandOffice, upgradeRoom, customizeBanner, upgradeComputer, performRoomAction, getNegotiationChance, getWorkSession, getWorkSessionEligibility, startWorkSession, answerWorkPuzzle, completeWorkSession } from './simulation.js';
 
 const testRequest = new URL(location.href).searchParams.get('teste');
 let localTestMode = testRequest === '1';
@@ -27,6 +28,8 @@ let scene;
 let currentStation = null;
 let panelWasPaused = true;
 let panelTab = 'main';
+let financeDay = null;
+let financePeriod = null;
 let computerApp = 'desktop';
 let shopBrowser = createShopBrowser();
 let computerUnlocked = false;
@@ -67,7 +70,7 @@ function focusWorkPuzzle() {
   document.querySelector('#terminal-command, #station-panel [data-puzzle-answer], #station-panel [data-action="complete-work-session"]')?.focus({ preventScroll: true });
 }
 function panelScroller(panel = document.querySelector('#station-panel')) {
-  return panel.querySelector('.shop-browser-viewport') || panel.querySelector('.terminal-output-area') || panel.querySelector('.computer-window-content') || panel.querySelector('.station-body');
+  return panel.querySelector('.finance-board-pages') || panel.querySelector('.shop-browser-viewport') || panel.querySelector('.terminal-output-area') || panel.querySelector('.computer-window-content') || panel.querySelector('.station-body');
 }
 function browseShop(route) {
   if (!isComputerApp('expansion') || !scene.isNearStation('work')) return;
@@ -288,7 +291,7 @@ function travelTo(action) {
 function positionPanel() {
   const panel = document.querySelector('#station-panel');
   if (!currentStation) return;
-  if (currentStation === 'work' || window.innerWidth <= 760) {
+  if (['work', 'finance'].includes(currentStation) || window.innerWidth <= 760) {
     panel.style.left = ''; panel.style.top = ''; return;
   }
   const anchor = scene.getScreenPoint(currentStation);
@@ -350,7 +353,14 @@ function renderStation() {
   el.hidden = false;
   el.dataset.station = currentStation;
   el.classList.toggle('computer-panel', currentStation === 'work');
+  el.classList.toggle('finance-panel', currentStation === 'finance');
   el.classList.toggle('computer-maximized', currentStation === 'work' && computerMaximized);
+  if (currentStation === 'finance') {
+    el.innerHTML = renderFinanceBoard(state, { section: panelTab, selectedDay: financeDay, selectedPeriod: financePeriod });
+    panelScroller(el).scrollTop = previousScroll;
+    requestAnimationFrame(positionPanel);
+    return;
+  }
   if (currentStation === 'work') {
     el.innerHTML = `<div class="station-frame computer-frame"><div class="station-body computer-host">${stationContent('work')}</div></div>`;
     panelScroller(el).scrollTop = previousScroll;
@@ -382,12 +392,6 @@ function stationContent(action) {
   if (action === 'board') {
     const events = state.pendingEvents || [];
     return `${tabs([['main', 'Quadro & entregas'], ['events', `Decisões pendentes (${events.length})`]])}${panelTab === 'events' ? events.map((event) => `<article class="event-card"><span class="tag">DECISÃO DO FUNDADOR</span><h3>${escape(event.title)}</h3><p>${escape(event.description)}</p><div class="event-options">${event.options.map((o) => `<button class="secondary-button" data-event="${escape(event.id)}" data-choice="${escape(o.id)}"><strong>${escape(o.label)}</strong><small>${escape(o.description)}</small></button>`).join('')}</div></article>`).join('') || '<div class="empty-state">Nenhum imprevisto pendente. Continue acompanhando seus projetos.</div>' : `${events.length ? `<div class="event-alert">${icon('message')} ${events.length} decisão aguardando você no quadro. <button class="text-button" data-station-tab="events">Resolver agora ${icon('arrow')}</button></div>` : ''}<div class="kanban-strip"><span>A DESENVOLVER</span><span>EM EXECUÇÃO</span><span>REVISÃO</span><span>ENTREGUE</span></div>${state.projects.length ? state.projects.slice().reverse().map((p) => `<article class="project-card">${projectRow(p)}<div class="project-card-meta"><span class="status-pill ${p.status === 'delivered' ? 'success' : ''}">${p.status === 'delivered' ? 'Entregue' : ({ backlog: 'A desenvolver', development: 'Em execução', review: 'Em revisão' }[p.phase] || 'Em execução')}</span><span>Qualidade ${Math.round(p.quality)}% · ${p.progress.toFixed(1)}/${p.hours}h</span></div>${p.status === 'active' ? `<label class="select-label">Ritmo de execução<select data-project-mode="${escape(p.id)}"><option value="fast" ${p.mode === 'fast' ? 'selected' : ''}>Rápido · mais dívida e risco de bugs</option><option value="standard" ${p.mode === 'standard' ? 'selected' : ''}>Padrão · equilíbrio entre prazo e qualidade</option><option value="careful" ${p.mode === 'careful' ? 'selected' : ''}>Caprichado · mais qualidade, menos velocidade</option></select></label><button class="secondary-button compact full" data-project-priority="${escape(p.id)}">${state.focusProjectId === p.id ? 'Prioridade do fundador' : 'Definir como prioridade'}</button>` : `<p class="muted">${p.paid ? 'Pagamento recebido.' : `Recebimento previsto para D${p.dueDay}. Consulte o financeiro.`}</p>`}</article>`).join('') : '<div class="empty-state">O primeiro post-it começa na mesa comercial. Caminhe até lá e feche um contrato.</div>'}`}`;
-  }
-  if (action === 'finance') {
-    const receivables = state.receivables || [];
-    const balance = state.loan?.balance || 0;
-    const office = getOfficeOverview(state);
-    return `${tabs([['main', 'Caixa & recebimentos'], ['ledger', 'Movimentações'], ['office', 'Custos do espaço'], ['credit', 'Reserva & crédito']])}${stats([['CAIXA', money(state.cash), `${Math.max(0, Math.floor(state.cash / dailyCost()))} dias de fôlego estimado`], ['A RECEBER', money(receivables.reduce((sum, r) => sum + r.amount, 0)), 'Entregar e receber são momentos diferentes'], ['CUSTO POR DIA ÚTIL', money(dailyCost()), 'Aluguel + folha + provisão de manutenção']])}${panelTab === 'office' ? officeCostContent(office) : panelTab === 'ledger' ? `<div class="ledger">${state.ledger.slice(0, 35).map((l) => `<div class="ledger-row"><span class="ledger-icon ${l.amount >= 0 ? 'positive' : ''}">${icon(l.amount >= 0 ? 'trend' : 'wallet')}</span><div><strong>${escape(l.label)}</strong><small>Dia ${l.day}</small></div><b class="${l.amount >= 0 ? 'positive-text' : ''}">${l.amount >= 0 ? '+' : '−'}${money(Math.abs(l.amount))}</b></div>`).join('')}</div>` : panelTab === 'credit' ? `<article class="loan-card"><h3>Crédito de emergência</h3><p class="muted">Uma única linha de R$ 2.000 para a empresa. O saldo cobra 2% de juros a cada 28 dias e compromete sua reserva futura. O empréstimo ajuda a atravessar um atraso, mas não substitui contratos saudáveis.</p>${stats([['SALDO DO EMPRÉSTIMO', money(balance), 'Juros de 2% por ciclo financeiro'], ['DIAS NO VERMELHO', state.consecutiveNegativeDays || 0, '60 dias seguidos encerram a empresa']])}<div class="action-grid"><button class="primary-button" data-action="take-loan" ${state.loan?.taken ? 'disabled' : ''}>${state.loan?.taken ? 'Crédito inicial utilizado' : 'Contratar R$ 2.000'}</button><button class="secondary-button" data-action="repay-loan" ${balance <= 0 ? 'disabled' : ''}>Quitar ${money(balance)}</button></div></article>` : `<h3 class="subheading">Recebimentos previstos</h3>${receivables.length ? receivables.map((r) => `<article class="receivable"><div><strong>${escape(r.client)}</strong><small>${r.dueDay < state.day ? 'Pagamento atrasado' : 'Previsto'} · D${r.dueDay}</small></div><b>${money(r.amount)}</b>${r.dueDay <= state.day ? `<button class="secondary-button compact" data-collect="${escape(r.projectId)}">Cobrar cliente</button>` : ''}</article>`).join('') : '<div class="empty-state">Nenhuma nota a receber. O comercial encontra contratos e o quadro acompanha as entregas.</div>'}<div class="concept-note">${icon('wallet')}<p>Aluguel continua no fim de semana. A folha é paga nos dias úteis; computadores e salas têm manutenção a cada 28 dias. Contratos competitivos, padrão e premium recebem em D+2, D+3 e D+5 após a entrega.</p></div>`}`;
   }
   if (action === 'team') {
     const office = getOfficeOverview(state);
@@ -464,6 +468,7 @@ function showProfile(isNew = false) {
       terminalView = 'work';
       terminalHistory = [];
       panelWasPaused = true;
+      financeDay = null; financePeriod = null;
       state = createGame(profile);
       if (localTestMode) enableLocalTest(state, true);
       gameStarted = true;
@@ -547,6 +552,16 @@ document.addEventListener('click', (e) => {
   if (target.dataset.travel) return travelTo(target.dataset.travel);
   if (target.dataset.action) return handleAction(target.dataset.action);
   if (!currentStation || !scene.isNearStation(currentStation)) return;
+  if (currentStation === 'finance' && target.dataset.financeDay) {
+    financeDay = Number(target.dataset.financeDay); panelTab = 'forecast'; renderStation();
+    document.querySelector(`.finance-day-strip [data-finance-day="${financeDay}"]`)?.focus({ preventScroll: true });
+    return;
+  }
+  if (currentStation === 'finance' && target.dataset.financeAction) {
+    if (target.dataset.financeAction === 'anticipate') run(anticipateReceivable, target.dataset.financeProject);
+    else if (target.dataset.financeAction === 'firm') run(collectReceivable, target.dataset.financeProject, 'firm');
+    return;
+  }
   if (target.dataset.computerCommand && currentStation === 'work') {
     const command = target.dataset.computerCommand;
     if (command === 'reset-password' && !computerUnlocked) {
@@ -615,6 +630,16 @@ document.addEventListener('click', (e) => {
   else if (target.dataset.product && (currentStation === 'product' || currentStation === 'work' && computerApp === 'laboratory')) run(investProduct, target.dataset.product);
 });
 document.addEventListener('submit', (e) => {
+  const financialForm = e.target.closest('[data-finance-form]');
+  if (financialForm) {
+    e.preventDefault();
+    if (currentStation !== 'finance' || !scene.isNearStation('finance')) return;
+    const data = new FormData(financialForm);
+    if (financialForm.dataset.financeForm === 'borrow') run(takeLoan, Number(data.get('amount')));
+    else if (financialForm.dataset.financeForm === 'repay') run(repayLoan, Number(data.get('amount')));
+    else if (financialForm.dataset.financeForm === 'renegotiate') run(renegotiateReceivable, financialForm.dataset.financeProject, Number(data.get('extension')));
+    return;
+  }
   if (['shop-address-form', 'shop-search-form', 'shop-filter-form'].includes(e.target.id)) {
     e.preventDefault();
     if (!isComputerApp('expansion') || !scene.isNearStation('work')) return;
@@ -637,6 +662,11 @@ document.addEventListener('submit', (e) => {
   run(customizeBanner, values.get('bannerText'), values.get('bannerColor'));
 });
 document.addEventListener('change', (e) => {
+  if (e.target.matches('[data-finance-period]') && currentStation === 'finance' && scene.isNearStation('finance')) {
+    const id = Number(e.target.value);
+    if (state.finance.periods.some(p => p.id === id)) { financePeriod = id; renderStation(); }
+    return;
+  }
   if (!currentStation || !scene.isNearStation(currentStation)) return;
   if (currentStation === 'work' && !computerUnlocked) return;
   const t = e.target;

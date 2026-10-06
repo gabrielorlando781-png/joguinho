@@ -93,9 +93,26 @@ O fundador tem **8h por dia útil**. Trabalho manual adianta as horas reservadas
 
 Entregar e receber são momentos diferentes. Contratos competitivos, equilibrados e premium têm vencimento em **D+2, D+3 e D+5** após a entrega. O financeiro permite cobrar valores vencidos; contratos premium podem atrasar. Atrasos na entrega e qualidade baixa reduzem pagamento e reputação.
 
-O custo fixo acompanha o endereço: aluguel, R$ 35 de internet e serviços por dia e os adicionais das salas construídas, incluindo fins de semana. A folha usa salário dividido por 20 dias úteis, com multiplicador **1,15 para PJ** e **1,7 para CLT**. Sábados e domingos são pulados pela interface, com descanso, custos e recebimentos contabilizados. A linha de crédito inicial é de **R$ 2.000**, disponível uma vez, com juros de **2% a cada 28 dias** até a quitação. Caixa negativo pode ser recuperado; a empresa fecha após 60 dias consecutivos no vermelho.
+O custo fixo acompanha o endereço: aluguel, R$ 35 de internet e serviços por dia e os adicionais das salas construídas, incluindo fins de semana. A folha usa salário dividido por 20 dias úteis, com multiplicador **1,15 para PJ** e **1,7 para CLT**. Sábados e domingos são pulados pela interface, com descanso, custos e recebimentos contabilizados. A linha de crédito começa em **R$ 2.000**, cresce com reputação e histórico e permite novos saques conforme a dívida é amortizada. Os juros de **2% a cada 28 dias** são incorporados à dívida até a quitação. Caixa negativo pode ser recuperado; a empresa fecha após 60 dias consecutivos no vermelho.
 
 O laboratório libera após duas entregas. Cada dia permite um investimento: protótipo custa **2h de desenvolvimento e R$ 300**, pesquisa custa **1h de qualidade e R$ 150**. Completar o protótipo e duas pesquisas lança o MVP. A receita recorrente é recebida em ciclos de 28 dias, com R$ 100 de suporte por ciclo.
+
+## Quadro do Financeiro
+
+Caminhe até a sala Financeiro e clique no quadro ou pressione **E**. O espaço tem duas mesas de trabalho, cadeiras, calculadora, documentos e um quadro com números e gráfico do caixa.
+
+As seis abas do quadro mostram informações e ações separadas:
+
+- **Caixa e fôlego:** saldo, dias de operação sem novas entradas e próximos movimentos.
+- **Fluxo previsto:** gráfico de 30 dias, cenário de risco e detalhes de cada dia. Só inclui recebíveis já emitidos e obrigações conhecidas; novos contratos não são receita garantida.
+- **A receber:** vencimento, risco e situação de cada nota. Cobrar usa 0,5h de gestão; cobrança firme usa 1h e reduz a reputação. Renegociar usa 0,5h, concede 2% de desconto e estende o prazo em três ou sete dias. Antecipar usa 0,5h e recebe o líquido do desconto mostrado, transferindo o risco ao banco. Cada nota é liquidada uma vez.
+- **A pagar:** salários e encargos separados, aluguel, serviços, manutenção e impostos. Encargos simplificados: 15% para PJ e 70% para CLT. O imposto é 6% sobre novas entregas e receita de produto, provisionado no faturamento e pago no fechamento do ciclo.
+- **Crédito:** limite, saldo devedor, próxima incidência de juros, empréstimo por valor e amortização parcial ou total.
+- **Fechamento mensal:** receita, despesas por categoria, resultado e comparação com o período anterior. O mês do jogo tem 28 dias. Financiamentos e compras de expansão movimentam o caixa sem virarem lucro ou despesa operacional.
+
+Notas de alto risco podem resultar em calote; renegociar reduz o risco, sem garantir o recebimento. O fechamento reconhece a perda e mantém a nota identificada no quadro. Consultar relatórios não consome dinheiro ou horas.
+
+Saves anteriores continuam funcionando, sem cobrança retroativa de impostos. O histórico financeiro disponível é importado e identificado no fechamento.
 
 ## Evolução do escritório
 
@@ -144,7 +161,7 @@ A **sala de reunião** custa R$ 3.800, ocupa três posições, acrescenta R$ 10/
 
 A **sala do CEO** custa R$ 8.500, ocupa três posições, acrescenta R$ 18/dia e R$ 200 por ciclo. Exige andar inteiro, três funcionários, seis entregas, reputação 35 e R$ 25 mil em caixa. Foco consome 1h de desenvolvimento e melhora energia e produção do fundador no dia; usar repetidamente aumenta o isolamento e prejudica a moral. Conversar com a equipe usa 1h de vendas e reduz esse isolamento.
 
-Cada ação especial tem limite diário e usa o mesmo orçamento de oito horas. A manutenção é lançada no financeiro a cada 28 dias, inclusive se a data cair no fim de semana. A consulta **Financeiro → Custos do espaço** mostra os valores e a próxima cobrança.
+Cada ação especial tem limite diário e usa o mesmo orçamento de oito horas. A manutenção é lançada no financeiro a cada 28 dias, inclusive se a data cair no fim de semana. A consulta **Financeiro → A pagar** mostra os valores e a próxima cobrança.
 
 ## Salvamento
 

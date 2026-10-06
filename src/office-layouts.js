@@ -1,6 +1,6 @@
 const STATION_META = {
   work: ['DESENVOLVIMENTO', 'Sentar e trabalhar'], board: ['PROJETOS', 'Consultar os projetos'],
-  sales: ['COMERCIAL', 'Conversar com clientes'], finance: ['FINANCEIRO', 'Conferir o caixa'],
+  sales: ['COMERCIAL', 'Conversar com clientes'], finance: ['FINANCEIRO', 'Consultar o quadro financeiro'],
   team: ['PESSOAS & CULTURA', 'Cuidar da equipe'], furniture: ['LOJA DO ESCRITÓRIO', 'Planejar o escritório'],
   coffee: ['CAFÉ', 'Preparar um café'], rest: ['DESCANSO', 'Fazer uma pausa'],
   product: ['LABORATÓRIO', 'Desenvolver um produto'], reception: ['DIÁRIO', 'Abrir o diário do fundador'],
@@ -114,8 +114,19 @@ const MAPS = {
 export function createOfficeLayout(office = {}) {
   const layout = clone(MAPS[office.stage] || MAPS.garage);
   layout.stage = MAPS[office.stage] ? office.stage : 'garage';
+  const financialRoom = layout.sectors.finance;
+  const deskWidth = Math.floor((financialRoom.w - 84) / 2);
+  const deskY = financialRoom.y + 104;
+  layout.tables.finance = table(financialRoom.x + 12, deskY, deskWidth, 'finance');
+  layout.tables.financeAccounts = table(financialRoom.x + financialRoom.w - 12 - deskWidth, deskY, deskWidth, 'finance-accounts');
+  layout.financeBoard = { x: financialRoom.x + 12, y: financialRoom.y + 15, w: financialRoom.w - 24, h: 68 };
+  Object.assign(layout.stations.find(spot => spot.action === 'finance'), {
+    x: financialRoom.x + financialRoom.w / 2, y: financialRoom.y + 88,
+    labelX: financialRoom.x + financialRoom.w / 2, labelY: financialRoom.y - 12,
+    bounds: { ...layout.financeBoard }, range: 38,
+  });
   layout.posts = layout.posts.slice(0, Array.isArray(office.workstations) ? office.workstations.length : 1);
-  layout.rooms = Object.entries(layout.sectors).map(([sector, bounds]) => ({ ...bounds, sector, level: office.rooms?.[sector] || 'open' }));
+  layout.rooms = Object.entries(layout.sectors).map(([sector, bounds]) => ({ ...bounds, sector, level: office.rooms?.[sector] || 'open', baseEnclosed: sector === 'finance' }));
   for (const key of ['meeting', 'ceo']) {
     if (office.special?.[key] && layout[key]) {
       layout.rooms.push({ ...layout[key], sector: key, level: 'dedicated' });
@@ -134,7 +145,7 @@ export function createOfficeLayout(office = {}) {
 }
 
 export function roomWalls(room) {
-  if (room.level === 'open') return [];
+  if (room.level === 'open' && !room.baseEnclosed) return [];
   const { x, y, w, h, door = 'bottom', doorSize = 96 } = room;
   const segments = [];
   const wall = (side, sx, sy, sw, sh) => {

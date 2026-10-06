@@ -1,6 +1,7 @@
 import { createOffice, validOffice, getOfficeOverview, getRoomEffects, getComputerMultiplier, getItemEligibility, getExpansionEligibility, getRoomEligibility, getComputerEligibility, getRoomActionEligibility } from './office-progression.js';
 import { WORK_PUZZLE_COUNT, createWorkPuzzles, validWorkSession } from './work-puzzles.js';
 import { isLocalTestState } from './local-test.js';
+import { createFinance, ensureFinance, validFinance, noteFinanceMovement, noteFinanceRevenue, noteFinanceExpense, closeFinancePeriod, getPayroll, getCreditOverview, getReceivableAction, getReceivableRisk, receivableDefaults, FINANCE_CYCLE } from './finance-model.js';
 export { OFFICE_STAGES, ROOM_LEVELS, OFFICE_SECTORS, SHOP_ITEMS, COMPUTER_LEVELS, ROOM_ACTIONS, getOfficeOverview, getRoomEffects, getComputerMultiplier, getItemEligibility, getExpansionEligibility, getRoomEligibility, getComputerEligibility, getRoomActionEligibility } from './office-progression.js';
 
 const SAVE_KEY = 'joguinho-save-v1';
@@ -81,6 +82,7 @@ function addLog(state, message) {
 }
 
 function recordMoney(state, amount, label) {
+  noteFinanceMovement(state, amount, label);
   state.cash = round(state.cash + amount);
   state.ledger.unshift({ day: state.day, label, amount: round(amount) });
   state.ledger.length = Math.min(state.ledger.length, 200);
@@ -156,6 +158,7 @@ export function createGame(profile = {}) {
     workSession: null,
   };
   state.office = createOffice(state);
+  state.finance = createFinance(state);
   LEADS.slice(0, 3).forEach((lead) => state.leads.push(leadFromTemplate(state, lead)));
   return state;
 }
@@ -206,7 +209,8 @@ function validSave(state, legacy = false, previousVersion = null) {
   if (!state.receivables.every((r) => Number.isInteger(r.paymentDay) && r.paymentDay >= r.dueDay && Number.isInteger(r.followupCount) && bounded(r.followupCount, 0, 1))) return false;
   if (!entries(state.pendingEvents, (e) => e && string(e.id) && string(e.projectId) && ['scope', 'blocker', 'bug'].includes(e.type) && string(e.title) && string(e.description) && Number.isInteger(e.createdDay) && entries(e.options, (o) => o && string(o.id) && string(o.label) && string(o.description) && bounded(o.cost, 0, 1000000) && bounded(o.hours, 0, 8) && ['sales', 'delivery', 'quality', 'none'].includes(o.area))) || state.pendingEvents.length > 1) return false;
   if (previousVersion === 2) return true;
-  if (!validOffice(state)) return false;
+  if (!validOffice(state) || !validFinance(state.finance)) return false;
+  if (!state.receivables.every(r => (r.status === undefined || ['pending', 'renegotiated', 'defaulted'].includes(r.status)) && (r.riskScore === undefined || bounded(r.riskScore, 0, 100)) && (r.renegotiated === undefined || typeof r.renegotiated === 'boolean'))) return false;
   if (!validWorkSession(state)) return false;
   if (!state.employees.every((person) => person.onboardingUntil === undefined || (Number.isInteger(person.onboardingUntil) && bounded(person.onboardingUntil, 0, 100000000)))) return false;
   if (!state.leads.every((lead) => lead.negotiation === undefined || lead.negotiation === null || (lead.negotiation && Number.isInteger(lead.negotiation.day) && lead.negotiation.day > 0 && Object.hasOwn(PRICING, lead.negotiation.pricing) && bounded(lead.negotiation.chance, 0, 1) && bounded(lead.negotiation.roll, 0, 99) && lead.negotiation.closed === false))) return false;
@@ -255,6 +259,7 @@ export function loadGame(storageKey = SAVE_KEY) {
     // Never start advancing a restored company before the player presses play.
     if (saved.state.workSession === undefined) saved.state.workSession = null;
     saved.state.paused = true;
+    ensureFinance(saved.state);
     return saved.state;
   } catch {
     return null;
@@ -617,20 +622,56 @@ function receivePayment(state, receivable) {
   addLog(state, `${receivable.client} pagou R$ ${receivable.amount}. O dinheiro entrou no caixa.`);
 }
 
-export function collectReceivable(state, projectId) {
+export function collectReceivable(state, projectId, style = 'polite') {
   if (!running(state)) return result(false, 'A empresa está encerrada.');
-  const receivable = state.receivables.find((item) => item.projectId === projectId);
-  if (!receivable) return result(false, 'Não há recebimento pendente para esse projeto.');
-  if (state.day < receivable.dueDay) return result(false, 'O prazo de pagamento ainda não venceu.');
-  if (receivable.followupCount >= 1) return result(false, 'Essa cobrança já foi feita. O próximo pagamento segue a previsão atualizada.');
+  const receivable = state.receivables.find(item => item.projectId === projectId);
+  const action = style === 'firm' ? 'firm' : style === 'polite' ? 'collect' : 'unknown';
+  const allowed = getReceivableAction(state, receivable, action);
+  if (!allowed.ok) return result(false, allowed.reason);
+  if (!spendHours(state, 'quality', allowed.hours)) return result(false, 'Reserve horas de gestão em um dia útil.');
   receivable.followupCount = 1;
-  if (receivable.paymentDay <= state.day || state.day > receivable.dueDay) {
+  if (style === 'firm') state.reputation = clamp(state.reputation - 1, 0, 100);
+  if (style === 'firm' || receivable.paymentDay <= state.day || state.day > receivable.dueDay) {
     receivePayment(state, receivable);
-    return result(true, `Cobrança concluída: R$ ${receivable.amount} entraram no caixa.`, { amount: receivable.amount });
+    return result(true, `Cobrança concluída: R$ ${receivable.amount} entraram no caixa.${style === 'firm' ? ' A pressão custou 1 ponto de reputação.' : ''}`, { amount: receivable.amount });
   }
-  receivable.paymentDay = Math.min(receivable.paymentDay, state.day + 1);
+  receivable.paymentDay = Math.max(receivable.dueDay, Math.min(receivable.paymentDay, state.day + 1));
   addLog(state, `Cobrança enviada a ${receivable.client}. Previsão antecipada para o dia ${receivable.paymentDay}.`);
-  return result(true, `O cliente confirmou pagamento para o dia ${receivable.paymentDay}.`);
+  return result(true, `Cobrança enviada. Pagamento previsto para D${receivable.paymentDay}; ${allowed.hours}h de gestão utilizadas.`);
+}
+
+export function renegotiateReceivable(state, projectId, days = 3) {
+  if (!running(state)) return result(false, 'A empresa está encerrada.');
+  const receivable = state.receivables.find(item => item.projectId === projectId);
+  const allowed = getReceivableAction(state, receivable, 'renegotiate', days);
+  if (!allowed.ok) return result(false, allowed.reason);
+  if (!spendHours(state, 'quality', allowed.hours)) return result(false, 'Reserve horas de gestão em um dia útil.');
+  const risk = allowed.risk.score;
+  receivable.amount = allowed.net;
+  receivable.dueDay = Math.max(state.day, receivable.dueDay) + days;
+  receivable.paymentDay = Math.max(receivable.paymentDay, receivable.dueDay);
+  receivable.renegotiated = true;
+  receivable.status = 'renegotiated';
+  receivable.riskScore = Math.max(5, risk - 10);
+  noteFinanceExpense(state, 'fees', allowed.fee);
+  const project = state.projects.find(p => p.id === projectId);
+  if (project) { project.dueDay = receivable.dueDay; project.invoiceAmount = receivable.amount; }
+  addLog(state, `${receivable.client}: prazo renegociado para D${receivable.dueDay}, com 2% de desconto e risco menor.`);
+  return result(true, `Novo vencimento D${receivable.dueDay}. A receber: R$ ${receivable.amount.toFixed(2)}; desconto de R$ ${allowed.fee.toFixed(2)}.`);
+}
+
+export function anticipateReceivable(state, projectId) {
+  if (!running(state)) return result(false, 'A empresa está encerrada.');
+  const receivable = state.receivables.find(item => item.projectId === projectId);
+  const allowed = getReceivableAction(state, receivable, 'anticipate');
+  if (!allowed.ok) return result(false, allowed.reason);
+  if (!spendHours(state, 'quality', allowed.hours)) return result(false, 'Reserve horas de gestão em um dia útil.');
+  receivePayment(state, receivable);
+  recordMoney(state, -allowed.fee, `Antecipação: ${receivable.client}`);
+  const project = state.projects.find(p => p.id === projectId);
+  if (project) project.settlementMethod = 'anticipated';
+  addLog(state, `Recebível antecipado sem recurso: R$ ${allowed.net.toFixed(2)} líquidos, com desconto de R$ ${allowed.fee.toFixed(2)}. O banco assume o risco do cliente.`);
+  return result(true, `R$ ${allowed.net.toFixed(2)} líquidos no caixa. Desconto: ${(allowed.discountRate * 100).toFixed(1)}%. Este recebível não será pago novamente.`, { amount: allowed.net, fee: allowed.fee });
 }
 
 export function investProduct(state, focus = 'prototype') {
@@ -674,15 +715,17 @@ export function recordTravel(state, distance) {
   return result(true, 'O deslocamento reduz o tempo restante do fundador para entregar hoje.', { hours });
 }
 
-export function takeLoan(state) {
+export function takeLoan(state, amount = null) {
   if (!running(state)) return result(false, 'A empresa está encerrada.');
-  if (state.loan.taken) return result(false, 'A linha de crédito inicial de R$ 2.000 já foi usada.');
+  const credit = getCreditOverview(state);
+  if (amount === null) amount = Math.min(2000, credit.available);
+  if (!Number.isFinite(amount) || amount < 1 || amount > credit.available || Math.abs(round(amount) - amount) > 1e-8) return result(false, 'Escolha um valor dentro do limite disponível, com até duas casas decimais.');
+  if (state.loan.balance === 0) state.loan.nextInterestDay = state.day + FINANCE_CYCLE;
   state.loan.taken = true;
-  state.loan.balance = 2000;
-  state.loan.nextInterestDay = state.day + 28;
-  recordMoney(state, 2000, 'Empréstimo inicial');
-  addLog(state, 'Crédito de R$ 2.000 liberado. O saldo da dívida cresce 2% a cada 28 dias até a quitação.');
-  return result(true, 'R$ 2.000 entraram no caixa. Os juros são de 2% a cada 28 dias.');
+  state.loan.balance = round(state.loan.balance + amount);
+  recordMoney(state, amount, 'Empréstimo de capital de giro');
+  addLog(state, `Crédito de R$ ${amount.toFixed(2)} liberado. Juros de ${(state.loan.interest * 100).toFixed(0)}% a cada 28 dias; limite baseado em reputação e faturamento recebido.`);
+  return result(true, `R$ ${amount.toFixed(2)} entraram no caixa. Saldo devedor: R$ ${state.loan.balance.toFixed(2)}.`);
 }
 
 export function repayLoan(state, amount = state?.loan?.balance) {
@@ -705,8 +748,12 @@ function completeProject(state, project) {
   const priceFactor = (lateDays > 0 ? 0.9 : 1) * (project.quality < 55 ? 0.85 : 1);
   project.invoiceAmount = Math.round(project.price * priceFactor);
   project.dueDay = state.day + project.paymentDays;
+  noteFinanceRevenue(state, project.invoiceAmount);
   state.receivables.push({ projectId: project.id, client: project.client, amount: project.invoiceAmount, dueDay: project.dueDay, paymentDay: project.dueDay + Math.max(0, (project.pricing === 'premium' ? 2 : 0) - getRoomEffects(state).paymentDelayReduction), followupCount: 0 });
   state.pendingEvents = state.pendingEvents.filter((event) => event.projectId !== project.id);
+  const invoice = state.receivables.at(-1);
+  invoice.riskScore = getReceivableRisk(state, invoice).score;
+  invoice.status = 'pending';
   const reputationGain = (project.quality >= 80 ? 3 : project.quality >= 65 ? 2 : project.quality >= 50 ? 0 : -3) - (lateDays > 0 ? 2 : 0);
   state.reputation = clamp(state.reputation + reputationGain, 0, 100);
   state.stats.delivered += 1;
@@ -889,13 +936,20 @@ export function advanceDay(state) {
   const summary = { day, hoursWorked: 0, projectsDelivered: 0, revenue: 0, costs: 0, energy: state.energy, weekend: !weekday, travelHours: state.travelHours, productRevenue: 0, maintenance: 0, noiseLostHours: 0 };
   const office = getOfficeOverview(state);
   const effects = getRoomEffects(state);
-  for (const receivable of state.receivables.filter((item) => item.paymentDay <= day)) {
+  for (const receivable of state.receivables.filter(item => item.paymentDay <= day && item.status !== 'defaulted')) {
+    if (receivableDefaults(state, receivable)) {
+      receivable.status = 'defaulted';
+      noteFinanceExpense(state, 'losses', receivable.amount);
+      addLog(state, `${receivable.client} não honrou o pagamento. R$ ${receivable.amount.toFixed(2)} baixados por calote no financeiro.`);
+      continue;
+    }
     summary.revenue = round(summary.revenue + receivable.amount);
     receivePayment(state, receivable);
   }
   state.receivables.filter((item) => item.dueDay === day && item.paymentDay > day).forEach((receivable) => addLog(state, `${receivable.client} atrasou o pagamento. Nova previsão: dia ${receivable.paymentDay}. A cobrança está disponível no financeiro.`));
   let productSupport = 0;
   if (state.product.stage === 'launched' && state.product.nextPaymentDay <= day) {
+    noteFinanceRevenue(state, state.product.mrr);
     recordMoney(state, state.product.mrr, 'Produto: receita recorrente');
     state.stats.revenue = round(state.stats.revenue + state.product.mrr);
     summary.productRevenue = state.product.mrr;
@@ -907,6 +961,7 @@ export function advanceDay(state) {
   }
   if (state.loan.balance > 0 && state.loan.nextInterestDay <= day) {
     const interest = round(state.loan.balance * state.loan.interest);
+    noteFinanceExpense(state, 'interest', interest);
     state.loan.balance = round(state.loan.balance + interest);
     state.loan.nextInterestDay = day + 28;
     addLog(state, `R$ ${interest.toFixed(2)} de juros foram incorporados ao empréstimo. Saldo: R$ ${state.loan.balance.toFixed(2)}.`);
@@ -987,7 +1042,8 @@ export function advanceDay(state) {
   });
   if (weekday && isolationPenalty > 0 && state.employees.length) addLog(state, `O isolamento do fundador reduziu em ${isolationPenalty.toFixed(1)} a moral do time. Converse com a equipe na sala do CEO.`);
 
-  const payroll = weekday ? state.employees.reduce((total, person) => total + person.salary / 20 * (person.contract === 'CLT' ? 1.7 : 1.15), 0) : 0;
+  const payrollDetail = getPayroll(state);
+  const payroll = weekday ? payrollDetail.dailySalary + payrollDetail.dailyCharges : 0;
   recordMoney(state, -office.dailyRent, 'Aluguel, internet e custos fixos');
   if (state.office.nextMaintenanceDay <= day) {
     summary.maintenance = office.monthlyMaintenance;
@@ -995,8 +1051,19 @@ export function advanceDay(state) {
     state.office.nextMaintenanceDay = day + 28;
     addLog(state, `Manutenção mensal: R$ ${office.monthlyMaintenance}. Próximo ciclo no dia ${state.office.nextMaintenanceDay}.`);
   }
-  if (payroll > 0) recordMoney(state, -payroll, 'Salários e contratos');
-  summary.costs = round(office.dailyRent + payroll + productSupport + summary.maintenance);
+  if (weekday && payrollDetail.total > 0) {
+    recordMoney(state, -payrollDetail.dailySalary, 'Salários e contratos');
+    recordMoney(state, -payrollDetail.dailyCharges, 'Encargos da folha');
+  }
+  const finance = ensureFinance(state);
+  summary.taxes = 0;
+  if (finance.taxDueDay <= day) {
+    summary.taxes = finance.taxAccrued;
+    if (summary.taxes) recordMoney(state, -summary.taxes, 'Impostos sobre faturamento');
+    finance.taxAccrued = 0;
+    finance.taxDueDay = day + FINANCE_CYCLE;
+  }
+  summary.costs = round(office.dailyRent + payroll + productSupport + summary.maintenance + summary.taxes);
   summary.hoursWorked = round(state.stats.hoursWorked - beforeWorked);
   summary.projectsDelivered = state.stats.delivered - beforeDelivered;
   summary.energy = state.energy;
@@ -1015,6 +1082,7 @@ export function advanceDay(state) {
   } else if (state.cash < 2000 && day % 5 === 0) {
     addLog(state, 'O caixa está abaixo de R$ 2.000. Entregue contratos e cuide dos recebimentos antes de gastar.');
   }
+  closeFinancePeriod(state);
   state.history.push({ day, cash: state.cash, revenue: state.stats.revenue, debt: state.debt, reputation: state.reputation });
   state.history = state.history.slice(-120);
   state.day += 1;
