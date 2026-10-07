@@ -1,3 +1,5 @@
+import { createBuilding, floorName, SECTOR_NAMES } from './office-building.js';
+import { createLayoutDraft, moveDraftSector, renderLayoutEditor } from './layout-editor.js';
 import './style.css';
 import { OfficeScene } from './office.js';
 import { renderOfficeStore } from './store-ui.js';
@@ -7,7 +9,7 @@ import { renderComputer, renderDevelopmentTerminal } from './computer-ui.js';
 import { getComputerLoginMode, configureComputerPassword, authenticateComputer, parseTerminalCommand } from './computer-session.js';
 import { icon, escape, money, pct, avatar } from './ui.js';
 import { TEST_SAVE_KEY, TEST_MODE_KEY, enableLocalTest, isLocalTestState } from './local-test.js';
-import { CANDIDATES, createGame, loadGame, saveGame, advanceDay, prospect, hireEmployee, setAllocation, setProjectMode, performAction, negotiateProject, discoverLead, interviewCandidate, assignEmployee, resolveProjectEvent, setProjectPriority, collectReceivable, renegotiateReceivable, anticipateReceivable, investProduct, recordTravel, takeLoan, repayLoan, getOfficeOverview, getRoomEffects, ROOM_ACTIONS, getRoomActionEligibility, purchaseOfficeItem, expandOffice, upgradeRoom, customizeBanner, upgradeComputer, performRoomAction, getNegotiationChance, getWorkSession, getWorkSessionEligibility, startWorkSession, answerWorkPuzzle, completeWorkSession } from './simulation.js';
+import { CANDIDATES, createGame, loadGame, saveGame, advanceDay, expandBuilding, setOfficeLayout, moveOfficeLocation, prospect, hireEmployee, setAllocation, setProjectMode, performAction, negotiateProject, discoverLead, interviewCandidate, assignEmployee, resolveProjectEvent, setProjectPriority, collectReceivable, renegotiateReceivable, anticipateReceivable, investProduct, recordTravel, takeLoan, repayLoan, getOfficeOverview, getRoomEffects, ROOM_ACTIONS, getRoomActionEligibility, purchaseOfficeItem, expandOffice, upgradeRoom, customizeBanner, upgradeComputer, performRoomAction, getNegotiationChance, getWorkSession, getWorkSessionEligibility, startWorkSession, answerWorkPuzzle, completeWorkSession } from './simulation.js';
 
 const testRequest = new URL(location.href).searchParams.get('teste');
 let localTestMode = testRequest === '1';
@@ -30,6 +32,7 @@ let panelWasPaused = true;
 let panelTab = 'main';
 let financeDay = null;
 let financePeriod = null;
+let layoutModalDraft = null;
 let computerApp = 'desktop';
 let shopBrowser = createShopBrowser();
 let computerUnlocked = false;
@@ -61,7 +64,7 @@ const stations = {
   exit: { title: 'Fechamento do escritório', subtitle: 'Confira a rotina antes de fechar as portas', icon: 'clock', short: 'Fechar o dia' },
 };
 
-document.querySelector('#app').innerHTML = `<main class="game-shell"><section id="world-stage" class="world-stage" aria-label="Escritório da sua empresa"><canvas id="office-canvas" tabindex="0"></canvas><header class="world-topbar"><div class="world-identity"><strong id="company-name"></strong><span id="founder-name"></span></div><div class="world-time-controls"><div class="world-time"><span id="day-date"></span><strong id="day-time"></strong></div><span class="hud-divider"></span><button class="icon-button" id="pause-button" data-action="pause" aria-label="Retomar tempo">${icon('play')}</button><button class="speed-button" id="speed-button" data-action="speed" title="Alterar velocidade">1×</button></div><button class="icon-button settings-button" data-action="settings" aria-label="Configurações" title="Configurações">${icon('settings')}</button></header><section id="station-panel" class="station-panel" hidden aria-label="Consulta no setor do escritório"></section></section></main>`;
+document.querySelector('#app').innerHTML = `<main class="game-shell"><section id="world-stage" class="world-stage" aria-label="Escritório da sua empresa"><canvas id="office-canvas" tabindex="0"></canvas><header class="world-topbar"><div class="world-identity"><strong id="company-name"></strong><span id="founder-name"></span></div><div class="world-time-controls"><div class="world-time"><span id="day-date"></span><strong id="day-time"></strong></div><span class="hud-divider"></span><button class="icon-button" id="pause-button" data-action="pause" aria-label="Retomar tempo">${icon('play')}</button><button class="speed-button" id="speed-button" data-action="speed" title="Alterar velocidade">1×</button></div><button class="icon-button settings-button" data-action="settings" aria-label="Configurações" title="Configurações">${icon('settings')}</button></header><div id="world-location" class="world-location" aria-live="polite"></div><section id="station-panel" class="station-panel" hidden aria-label="Consulta no setor do escritório"></section></section></main>`;
 
 function activeProjects() { return state.projects.filter((p) => p.status === 'active'); }
 function isComputerApp(app) { return currentStation === 'work' && computerUnlocked && computerApp === app; }
@@ -85,6 +88,7 @@ function buyShopProduct(id) {
   if (!product?.eligibility.ok) return toast(product?.eligibility.reason || 'Este produto não está disponível.', false);
   const before = state.cash;
   const result = product.kind === 'area' ? run(expandOffice)
+    : product.kind === 'building' ? run(expandBuilding, product.target)
     : product.kind === 'room' ? run(upgradeRoom, product.target)
       : product.kind === 'computer' ? run(upgradeComputer, product.target)
         : run(purchaseOfficeItem, product.target, { workstationId: product.workstation });
@@ -228,6 +232,8 @@ function renderClock() {
 function render() {
   renderClock();
   scene?.setState(state);
+  const location = state.office.building?.location || { floor: 0, room: null };
+  document.querySelector('#world-location').textContent = `${floorName(location.floor)} · ${location.room ? SECTOR_NAMES[location.room] : 'Escritório'}`;
   if (scene && gameStarted) state.officePosition = { x: scene.player.x, y: scene.player.y };
   if (currentStation && !scene.isNearStation(currentStation)) {
     state.paused = true;
@@ -249,6 +255,51 @@ function run(fn, ...args) {
     document.querySelector(`[data-${attr}="${CSS.escape(focusValue)}"]`)?.focus();
   } else if (currentStation) document.querySelector('#station-panel [data-action="close-station"]')?.focus({ preventScroll: true });
   return result;
+}
+function usePassage(action, floor = null) {
+  if (!gameStarted || !scene.isNearStation(action) || currentStation) return;
+  const outcome = moveOfficeLocation(state, action, floor);
+  if (!outcome.ok) return toast(outcome.message, false);
+  const stage = document.querySelector('#world-stage');
+  stage.classList.remove('room-transition'); void stage.offsetWidth; stage.classList.add('room-transition');
+  setTimeout(() => stage.classList.remove('room-transition'), 220);
+  render(); persist();
+  scene.resumeJourney();
+  document.querySelector('#office-canvas').focus({ preventScroll: true });
+}
+function showElevator() {
+  if (!scene.isNearStation('elevator')) return;
+  const b=state.office.building;
+  openModal(`<div class="elevator-panel"><small>CIRCULAÇÃO DO PRÉDIO</small><h2 id="modal-title">Elevador</h2><p>Você está no ${floorName(b.location.floor)}. Escolha o destino.</p><div class="elevator-floor-buttons">${Array.from({length:b.floors},(_,i)=>`<button data-elevator-floor="${i}" ${i===b.location.floor?'disabled':''}><strong>${i===0?'T':i+1}</strong><span>${floorName(i)}${i===b.location.floor?' · atual':''}</span>${icon('arrow')}</button>`).join('')}</div><p class="muted">O elevador usa 1,5 minuto de deslocamento por andar; a escada usa 6 minutos. Ambos contam no limite diário de 45 minutos em dias úteis.</p></div>`);
+}
+function interactWithOffice(action) {
+  if (action==='elevator') return showElevator();
+  if (action.startsWith('enter:') || action.startsWith('stairs:') || action==='leave-room') return usePassage(action);
+  openStation(action);
+}
+function openLayoutEditor() {
+  if (!isStoreOpen() || !scene.isNearStation(currentStation)) return;
+  if (isComputerApp('expansion')) { shopBrowser.layoutDraft=createLayoutDraft(state.office); browseShop({page:'layout'}); }
+  else { layoutModalDraft=createLayoutDraft(state.office); openModal(renderLayoutEditor(state,layoutModalDraft,true),true); }
+}
+function editLayout(target) {
+  if (!isStoreOpen() || !scene.isNearStation(currentStation)) return;
+  const draft=layoutModalDraft || shopBrowser.layoutDraft;
+  if (!draft) return;
+  if (target.hasAttribute('data-layout-cancel')) { layoutModalDraft=null; if(isComputerApp('expansion'))browseShop({page:'office'});else closeModal();return; }
+  if (target.hasAttribute('data-layout-save')) {
+    const modal=Boolean(layoutModalDraft);layoutModalDraft=null;
+    if (modal)closeModal();
+    const outcome=run(setOfficeLayout,draft.placements);
+    if(outcome?.ok && isComputerApp('expansion')) { shopBrowser.layoutDraft=null; browseShop({page:'office'}); }
+    return;
+  }
+  if (target.dataset.layoutSector)draft.selected=target.dataset.layoutSector;
+  else if (target.dataset.layoutFloor!==undefined)draft.floor=Number(target.dataset.layoutFloor);
+  else if (target.dataset.layoutBay)moveDraftSector(draft,draft.floor,target.dataset.layoutBay);
+  else if (target.dataset.layoutDoor)draft.placements[draft.selected].door=target.dataset.layoutDoor;
+  else if (target.hasAttribute('data-layout-reset'))draft.placements=createBuilding().placements;
+  if(layoutModalDraft)openModal(renderLayoutEditor(state,draft,true),true);else renderStation();
 }
 function openStation(action) {
   if (!gameStarted || !stations[action]) return;
@@ -443,6 +494,7 @@ function openModal(content, wide = false, closable = true) {
   requestAnimationFrame(() => first?.focus());
 }
 function closeModal() {
+  layoutModalDraft = null;
   document.querySelector('#modal-root').innerHTML = '';
   lastModalTrigger?.focus();
 }
@@ -492,7 +544,7 @@ function showSettings() {
   openModal(`<div class="settings-content"><div class="settings-brand brand"><span class="brand-mark">${icon('code')}</span><span>devhouse<span class="brand-dot">.</span></span></div><h2 id="modal-title">Configurações</h2><div class="settings-actions"><button data-action="fullscreen">${icon('fullscreen')}<span>${document.fullscreenElement ? 'Sair da tela cheia' : 'Tela cheia'}</span></button><button data-action="settings-profile">${icon('people')}<span>Fundador e empresa</span></button><button data-action="settings-help">${icon('book')}<span>Como jogar</span></button><button data-action="settings-new">${icon('plus')}<span>Novo jogo</span></button></div>${localTestMode ? '<section class="settings-test"><strong>Teste local</strong><p>Partida separada, com requisitos de progresso liberados. Amplie o espaço para instalar mais itens.</p><div class="settings-actions"><button data-local-test="money">+ R$ 1 milhão</button><button data-local-test="exit">Voltar à partida normal</button></div></section>' : ''}</div>`);
 }
 function showControls() {
-  openModal(`<h2 id="modal-title">Como jogar</h2><div class="settings-help"><p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ou setas para andar.</p><p>Clique ou toque no chão para caminhar. Clique em uma mesa ou no nome de um setor para ir até ele.</p><p><kbd>E</kbd> consulta o setor próximo. <kbd>Esc</kbd> fecha uma consulta.</p><p>Use o computador para desenvolver, comprar expansões e construir seu produto. Comercial, projetos, finanças e RH ficam nas mesas do escritório.</p><p>O botão de tempo retoma ou pausa o expediente. As velocidades são 1×, 2× e 4×.</p></div><button class="secondary-button full" data-action="settings">Voltar às configurações</button>`);
+  openModal(`<h2 id="modal-title">Como jogar</h2><div class="settings-help"><p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ou setas para andar.</p><p>Clique ou toque no chão para caminhar. Clique em uma mesa ou no nome de um setor para ir até ele.</p><p><kbd>E</kbd> consulta o setor próximo. <kbd>Esc</kbd> fecha uma consulta.</p><p>Use o computador para desenvolver, comprar expansões e construir seu produto. Salas dedicadas e de vidro têm portas: entre com clique ou E e consulte as mesas lá dentro. Use as escadas ou o elevador para trocar de andar. Na loja, a Planta permite reorganizar setores e divisórias.</p><p>O botão de tempo retoma ou pausa o expediente. As velocidades são 1×, 2× e 4×.</p></div><button class="secondary-button full" data-action="settings">Voltar às configurações</button>`);
 }
 async function toggleFullscreen() {
   try {
@@ -549,6 +601,12 @@ document.addEventListener('click', (e) => {
     }
     return;
   }
+  if (target.dataset.elevatorFloor!==undefined) {
+    if(!scene.isNearStation('elevator') || currentStation)return;
+    const floor=Number(target.dataset.elevatorFloor);closeModal();usePassage('elevator',floor);return;
+  }
+  if(target.hasAttribute('data-layout-open'))return openLayoutEditor();
+  if(Object.keys(target.dataset).some(key=>key.startsWith('layout')))return editLayout(target);
   if (target.dataset.travel) return travelTo(target.dataset.travel);
   if (target.dataset.action) return handleAction(target.dataset.action);
   if (!currentStation || !scene.isNearStation(currentStation)) return;
@@ -612,6 +670,7 @@ document.addEventListener('click', (e) => {
   if (target.dataset.storeTab && isStoreOpen()) {
     return selectPanelTab(target.dataset.storeTab, 'data-store-tab');
   }
+  if (target.dataset.buildingBuy && isStoreOpen())return run(expandBuilding,target.dataset.buildingBuy);
   if (target.hasAttribute('data-office-expand') && isStoreOpen()) return run(expandOffice);
   if (target.dataset.officeBuy && isStoreOpen()) return run(purchaseOfficeItem, target.dataset.officeBuy, { workstationId: target.dataset.workstation });
   if (target.dataset.roomUpgrade && isStoreOpen()) return run(upgradeRoom, target.dataset.roomUpgrade);
@@ -696,7 +755,7 @@ document.addEventListener('keydown', (e) => {
 });
 window.addEventListener('resize', () => { scene?.resize(); positionPanel(); });
 scene = new OfficeScene(document.querySelector('#office-canvas'), {
-  onInteract: openStation,
+  onInteract: interactWithOffice,
   onMove: ({ x, y, distance }) => {
     if (!gameStarted || currentStation) return;
     state.officePosition = { x, y };

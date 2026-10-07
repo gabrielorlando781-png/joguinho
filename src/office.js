@@ -1,3 +1,4 @@
+import { locationForAction, floorName, SECTOR_NAMES } from './office-building.js';
 import { createOfficeLayout, roomWalls } from './office-layouts.js';
 import { getFinanceOverview } from './finance-model.js';
 
@@ -24,6 +25,7 @@ export class OfficeScene {
     this.destination = null;
     this.path = null;
     this.pendingAction = null;
+    this.journeyAction = null;
     this.interactionOpen = false;
     this.positionLoaded = false;
     this.time = 0;
@@ -69,14 +71,20 @@ export class OfficeScene {
     this.state = state;
     this.financeSnapshot = getFinanceOverview(state);
     const office = state.office || {};
-    const key = JSON.stringify([office.stage, office.rooms, office.special, office.amenities, office.workstations?.map((post) => [post.desk, post.chair]), office.banner]);
+    const key = JSON.stringify([office.building, office.stage, office.rooms, office.special, office.amenities, office.workstations?.map((post) => [post.desk, post.chair]), office.banner]);
     const changed = key !== this.geometryKey;
+    const previousView = this.layout.viewKey;
     if (changed) {
       this.geometryKey = key;
       this.layout = createOfficeLayout(office);
       this.hotspots = this.layout.stations;
       this.obstacles = this.buildObstacles();
       this.renderBackground();
+    }
+    const viewChanged = previousView !== this.layout.viewKey;
+    if (wasPositionLoaded && viewChanged) {
+      const point = state.officePosition?.x > 0 ? state.officePosition : this.layout.spawn;
+      Object.assign(this.player, point, { moving: false, seated: false });
     }
     if (!this.positionLoaded) {
       this.positionLoaded = true;
@@ -87,8 +95,8 @@ export class OfficeScene {
       } else Object.assign(this.player, this.layout.spawn);
     }
     const blocked = !this.canStand(this.player.x, this.player.y);
-    if (changed || blocked) this.cancelRoute();
-    if (blocked || (wasPositionLoaded && previousStage !== this.layout.stage)) {
+    if (changed || blocked) this.cancelRoute(false);
+    if (blocked || (wasPositionLoaded && previousStage !== this.layout.stage && !viewChanged)) {
       const currentStation = changed && previousStation ? this.getStation(previousStation) : null;
       const nearest = currentStation && this.canStand(currentStation.x, currentStation.y)
         ? currentStation : this.nearestWalkablePosition(this.player) || this.layout.spawn;
@@ -104,9 +112,10 @@ export class OfficeScene {
   buildObstacles() {
     const layout = this.layout;
     const obstacles = Object.values(layout.tables).map(({ x, y, w, kind }) => ({ x, y, w, h: kind === 'reception' ? 43 : 62 }));
-    layout.posts.forEach((position, i) => { if (this.state.office?.workstations?.[i]?.desk !== false) obstacles.push({ x: position.x, y: position.y, w: position.w, h: 58 }); });
-    obstacles.push({ x: layout.coffee.x, y: layout.coffee.y, w: 81, h: 91 });
-    obstacles.push({ ...layout.lounge });
+    layout.posts.forEach((position, i) => { if (this.state.office?.workstations?.[position.index ?? i]?.desk !== false) obstacles.push({ x: position.x, y: position.y, w: position.w, h: 58 }); });
+    if (layout.coffee) obstacles.push({ x: layout.coffee.x, y: layout.coffee.y, w: 81, h: 91 });
+    if (layout.lounge) obstacles.push({ ...layout.lounge });
+    obstacles.push(...layout.portals, ...layout.structures, ...layout.fixtures);
     layout.rooms.forEach((room) => obstacles.push(...roomWalls(room)));
     return obstacles;
   }
@@ -123,12 +132,22 @@ export class OfficeScene {
     const x = this.offsetX + spot.x * this.scale, y = this.offsetY + spot.y * this.scale;
     return {x, y, visible: x >= 0 && x <= this.cssWidth && y >= 0 && y <= this.cssHeight};
   }
-  requestInteraction(action) {
+  requestInteraction(action, continuing = false) {
+    if (!continuing) this.journeyAction = null;
     const spot = this.getStation(action);
+    if (!spot && !this.blockedInput()) {
+      const target = locationForAction(this.state.office, action), here = this.layout.location;
+      if (!target) return false;
+      const step = here.room ? 'leave-room' : here.floor !== target.floor ? (here.floor < target.floor ? 'stairs:up' : 'stairs:down') : target.room ? `enter:${target.room}` : null;
+      if (!step || !this.getStation(step)) return false;
+      this.journeyAction = action;
+      return this.requestInteraction(step, true);
+    }
     if (!spot || this.blockedInput()) return false;
     if (this.isNearStation(action)) { this.activate(action); return true; }
     return this.walkTo(spot, action);
   }
+  resumeJourney() { const goal = this.journeyAction; if (goal) this.requestInteraction(goal); }
   setInteractionOpen(open) {
     this.interactionOpen = !!open;
     if (open) { this.cancelRoute(); this.keys.clear(); this.player.moving = false; this.reportMovement(true); }
@@ -136,7 +155,7 @@ export class OfficeScene {
   founderSeat() {
     const posts = this.state.office?.workstations || [];
     const index = Math.max(0, posts.findIndex(post => post.employeeId === 'founder'));
-    const post = posts[index], position = this.layout.posts[index];
+    const post = posts[index], position = this.layout.posts.find(position => (position.index ?? 0) === index);
     if (!position || (post && (!post.desk || !post.chair))) return null;
     return { x: position.x + position.w/2, y: position.y + 65 * (position.w/136) + 28 };
   }
@@ -158,10 +177,10 @@ export class OfficeScene {
     this.cancelRoute(); this.keys.clear(); this.travelAccumulator = 0; this.moveReportElapsed = 0;
     this.updateCamera();
   }
-  cancelRoute() { this.destination = null; this.path = null; this.pendingAction = null; }
+  cancelRoute(clearJourney = true) { this.destination = null; this.path = null; this.pendingAction = null; if (clearJourney) this.journeyAction = null; }
   activate(action) {
     if (!this.isNearStation(action) || this.blockedInput()) return false;
-    this.cancelRoute(); this.player.moving = false; this.reportMovement(true); this.onInteract(action); return true;
+    this.cancelRoute(false); this.player.moving = false; this.reportMovement(true); this.onInteract(action); return true;
   }
 
   resize() {
@@ -174,7 +193,7 @@ export class OfficeScene {
     const floor = this.layout.floor;
     // Frame the room itself, filling the viewport without the map's outer margins.
     this.viewBounds = { x: floor.x, y: floor.y - 106, w: floor.w, h: floor.h + 113 };
-    this.scale = Math.max(this.cssWidth / this.viewBounds.w, this.cssHeight / this.viewBounds.h) * this.zoom;
+    this.scale = Math.max(.95, this.cssWidth / this.viewBounds.w, this.cssHeight / this.viewBounds.h) * this.zoom;
     this.followCamera = true;
     this.updateCamera(); this.draw();
   }
@@ -305,7 +324,7 @@ export class OfficeScene {
     let dy=(this.keys.has('s')||this.keys.has('arrowdown')?1:0)-(this.keys.has('w')||this.keys.has('arrowup')?1:0);
     let pointerTravel=false, target=null;
     if(!dx && !dy && this.destination) {
-      if(distance(this.player,this.destination)<5) {const action=this.pendingAction;this.cancelRoute();this.player.moving=false;this.reportMovement(true);if(action)this.activate(action);return;}
+      if(distance(this.player,this.destination)<5) {const action=this.pendingAction;this.cancelRoute(false);this.player.moving=false;this.reportMovement(true);if(action)this.activate(action);return;}
       while(this.path?.length>1 && distance(this.player,this.path[0])<1e-7) this.path.shift();
       target=this.path?.[0]||this.destination;dx=target.x-this.player.x;dy=target.y-this.player.y;pointerTravel=true;
     }
@@ -359,9 +378,10 @@ export class OfficeScene {
 
   renderBackground() {
     const c=this.background.getContext('2d');
-    c.clearRect(0,0,WIDTH,HEIGHT);
+    this.background.width = this.layout.width; this.background.height = this.layout.height;
+    c.clearRect(0,0,this.layout.width,this.layout.height);
     const gradient=c.createRadialGradient(640,360,70,640,360,780);gradient.addColorStop(0,'#294738');gradient.addColorStop(1,'#14261e');
-    c.fillStyle=gradient;c.fillRect(0,0,WIDTH,HEIGHT);
+    c.fillStyle=gradient;c.fillRect(0,0,this.layout.width,this.layout.height);
     const floor = this.layout.floor, improved = !!this.state.office?.amenities?.floor;
     this.ellipse(c,floor.x+floor.w/2,floor.y+floor.h+6,floor.w/2+14,21,'#0e2018');
     this.rect(c,floor.x-5,floor.y-5,floor.w+10,floor.h+15,'#775b3e');
@@ -393,7 +413,7 @@ export class OfficeScene {
     this.polygon(c,[[floor.x+floor.w-208,floor.y],[floor.x+floor.w-61,floor.y],[floor.x+floor.w,floor.y+289],[floor.x+floor.w-144,floor.y+289]],'#fff9d4');c.restore();
     const colors = {development:['#799078','#6f846c'],sales:['#a89b79','#968a6b'],finance:['#80968a','#6c8577'],hr:['#a5aa86','#929970'],meeting:['#9b8874','#8d7c67'],ceo:['#aa9b75','#9d8c65']};
     this.layout.rooms.forEach(room=>{
-      const [outer,inner]=colors[room.sector];
+      const [outer,inner]=colors[room.sector] || colors.development;
       this.rug(c,room.x+9,room.y+10,room.w-18,room.h-18,outer,inner);
       if(room.level!=='open')this.text(c,room.level==='partition'?'DIVISÓRIAS':room.level==='glass'?'SALA DE VIDRO':'SALA DEDICADA',room.x+room.w/2,room.y+room.h-18,7,'#e4dcc1','center',600);
     });
@@ -437,7 +457,7 @@ export class OfficeScene {
     readout('team','PESSOAS & CULTURA',`${this.employees().length} pessoas`);
     readout('product','PRODUTO PRÓPRIO',this.state.product?.stage==='launched'?'MVP no ar':`${Math.round(this.state.product?.progress||0)}% do MVP`);
     readout('furniture','ESPAÇO DA EMPRESA',`${(office.workstations||[]).filter(p=>p.desk&&p.chair).length} postos prontos`);
-    const post=this.layout.posts[0];
+    const post=this.layout.posts.find(p=>(p.index ?? 0)===0);
     if(post) {
       this.rect(c,post.x+2,post.y-18,40,15,'#e3cb92');this.text(c,`E ${Math.round(this.state.energy??100)}%`,post.x+22,post.y-7,7,'#63764f','center',700);
     }
@@ -694,6 +714,7 @@ export class OfficeScene {
   }
   drawWorkstation(c,position,post,index) {
     const scale=position.w/136;
+    if(!post)return;
     if(post.desk) this.at(c,position.x,position.y,()=>{
       this.drawDesk(c,0,0,136,'work');
       if(post.computerLevel>=2){this.rect(c,99,-41,32,26,'#17362b');this.rect(c,102,-38,26,20,post.computerLevel===3?'#c3dca5':'#8aaca4');this.rect(c,112,-14,7,16,'#335546');}
@@ -732,7 +753,8 @@ export class OfficeScene {
     const c=this.ctx;c.setTransform(this.dpr,0,0,this.dpr,0,0);c.fillStyle='#14271f';c.fillRect(0,0,this.cssWidth,this.cssHeight);
     c.translate(this.offsetX,this.offsetY);c.scale(this.scale,this.scale);c.imageSmoothingEnabled=false;c.drawImage(this.background,0,0);
     this.drawFinanceBoard(c);
-    this.at(c,this.layout.board.x-305,this.layout.board.y-86,()=>this.drawProjects(c));
+    if(this.layout.board)this.at(c,this.layout.board.x-305,this.layout.board.y-86,()=>this.drawProjects(c));
+    this.drawArchitecture(c);
     const nearest=this.nearestHotspot(), hovered=this.pointer?this.hotspotAt(this.pointer):null;
     const selected=this.hotspots.find((spot)=>spot.action===this.pendingAction)||hovered||nearest;
     if(selected){c.globalAlpha=.19+Math.sin(this.time*3)*.04;this.ellipse(c,selected.x,selected.y,28,11,'#f4e6aa');c.globalAlpha=1;c.strokeStyle='#f5e2a58a';c.lineWidth=1.5;c.beginPath();c.ellipse(selected.x,selected.y,28,11,0,0,Math.PI*2);c.stroke();}
@@ -743,11 +765,11 @@ export class OfficeScene {
     const props=[];
     Object.values(this.layout.tables).forEach(table=>props.push({y:table.y+table.h,draw:()=>this.drawTable(c,table)}));
     const posts=this.state.office?.workstations||[{desk:true,chair:true,computerLevel:1,employeeId:'founder'}];
-    this.layout.posts.forEach((position,i)=>props.push({y:position.y+65*(position.w/136)+28,draw:()=>this.drawWorkstation(c,position,posts[i],i)}));
-    props.push({y:this.layout.coffee.y+94,draw:()=>this.at(c,this.layout.coffee.x-93,this.layout.coffee.y-301,()=>this.drawCoffee(c))});
-    props.push({y:this.layout.lounge.y+this.layout.lounge.h,draw:()=>this.drawLounge(c)});
+    this.layout.posts.forEach((position,i)=>props.push({y:position.y+65*(position.w/136)+28,draw:()=>this.drawWorkstation(c,position,posts[position.index ?? i],position.index ?? i)}));
+    if(this.layout.coffee)props.push({y:this.layout.coffee.y+94,draw:()=>this.at(c,this.layout.coffee.x-93,this.layout.coffee.y-301,()=>this.drawCoffee(c))});
+    if(this.layout.lounge)props.push({y:this.layout.lounge.y+this.layout.lounge.h,draw:()=>this.drawLounge(c)});
     const exit=this.getStation('exit');
-    props.push({y:exit.y+16,draw:()=>{this.rect(c,exit.x-16,exit.y-22,32,33,'#658566');this.rect(c,exit.x-11,exit.y-18,22,23,'#9fb694');this.polygon(c,[[exit.x-5,exit.y-11],[exit.x+5,exit.y-6],[exit.x-5,exit.y]],'#edf1ce');}});
+    if(exit)props.push({y:exit.y+16,draw:()=>{this.rect(c,exit.x-16,exit.y-22,32,33,'#658566');this.rect(c,exit.x-11,exit.y-18,22,23,'#9fb694');this.polygon(c,[[exit.x-5,exit.y-11],[exit.x+5,exit.y-6],[exit.x-5,exit.y]],'#edf1ce');}});
     this.layout.rooms.forEach(room=>roomWalls(room).forEach(wall=>props.push({y:wall.y+wall.h,draw:()=>this.drawRoomWall(c,wall)})));
     if(this.state.office?.amenities?.decor) {
       const floor=this.layout.floor;
@@ -760,6 +782,67 @@ export class OfficeScene {
     this.drawWorldData(c);
     this.hotspots.forEach(spot=>this.drawBadge(c,spot,selected?.action===spot.action));
     this.drawPlayerLabel(c,nearest);
+  }
+  drawArchitecture(c) {
+    const l=this.layout, f=l.floor, cx=f.x+f.w/2;
+    this.text(c,`${floorName(l.location.floor).toUpperCase()}${l.interior ? ' · '+(SECTOR_NAMES[l.location.room] || '').toUpperCase() : ''}`,cx,f.y-42,15,'#efe6c9','center',700);
+    for(const bay of l.emptyBays) {
+      this.rect(c,bay.x,bay.y,bay.w,bay.h,'#d3c4a04d');
+      c.save();c.strokeStyle='#a98e6688';c.lineWidth=2;c.setLineDash([8,10]);c.strokeRect(bay.x+14,bay.y+14,bay.w-28,bay.h-28);c.restore();
+      this.text(c,'ESPAÇO LIVRE',bay.x+bay.w/2,bay.y+bay.h/2,12,'#9a845f','center',600);
+    }
+    for(const p of l.portals) {
+      this.rect(c,p.x-2,p.y-2,p.w+4,p.h+4,'#597263');this.rect(c,p.x,p.y,p.w,p.h,p.glass?'#acc8bf':'#ddd3b9');
+      if(p.h>100) {
+        this.rect(c,p.x+15,p.y+18,p.w-30,p.h-70,p.glass?'#94b7ae':'#cbbf9f');
+        if(p.glass) {
+          for(let dx=38;dx<p.w-20;dx+=70)this.rect(c,p.x+dx,p.y+18,3,p.h-70,'#e9eee0');
+          this.rect(c,p.x+30,p.y+60,70,36,'#9baf9a');this.rect(c,p.x+p.w-95,p.y+85,65,32,'#a6b6a0');
+        } else {
+          this.rect(c,p.x+30,p.y+45,60,72,'#638471');this.rect(c,p.x+34,p.y+49,52,64,'#bbd0ba');
+          this.text(c,'DEPARTAMENTO',p.x+p.w/2,p.y+p.h/2,9,'#7c795f','center',600);
+        }
+        this.text(c,p.glass?'SALA DE VIDRO':'SALA DEDICADA',p.x+p.w/2,p.y+35,11,'#436657','center',700);
+      }
+      const dy=p.side==='top'?p.y:p.y+p.h-54, dx=p.x+p.w/2-35;
+      this.rect(c,dx-5,dy-4,80,59,'#587060');this.rect(c,dx,dy,70,54,p.glass?'#87b4ad':'#8f6d49');
+      this.rect(c,dx+5,dy+5,59,39,p.glass?'#c2d9cd':'#ad875b');this.rect(c,dx+59,dy+32,4,4,'#eed18a');
+      this.text(c,'PORTA',dx+35,dy+49,6,'#f3e5bf','center',700);
+    }
+    for(const structure of l.structures) {
+      const {x,y,w,h,kind}=structure;
+      if(kind==='elevator') {
+        this.rect(c,x-6,y-8,w+12,h+8,'#54635b');this.rect(c,x,y,w,h,'#99a69d');
+        this.rect(c,x+5,y+5,w/2-7,h-9,'#c7cdc1');this.rect(c,x+w/2+2,y+5,w/2-7,h-9,'#aeb9af');
+        this.rect(c,x+w/2-1,y+3,2,h-3,'#74857b');this.rect(c,x+w+8,y+32,12,23,'#677e6b');this.rect(c,x+w+11,y+38,5,5,'#e0d591');
+        this.rect(c,x+29,y-20,42,15,'#273d31');this.text(c,String(l.location.floor+1).padStart(2,'0'),x+w/2,y-9,10,'#d8cc8a','center',700);
+      } else {
+        this.rect(c,x-4,y-4,w+8,h+8,'#786f58');this.rect(c,x,y,w,h,'#afab91');
+        for(let i=0;i<8;i++){const sy=y+i*h/8;this.rect(c,x+8,sy,w-16,h/8-2,['#c8c1a6','#a4a98f'][i%2]);this.rect(c,x+9,sy,w-18,2,'#e1d9bc');}
+        this.rect(c,x+2,y,4,h,'#647f70');this.rect(c,x+w-6,y,4,h,'#647f70');
+        this.text(c,kind==='stairs-up'?'↑':'↓',x+w/2,y+h/2+14,36,'#3f6454','center',700);
+      }
+    }
+    for(const item of l.fixtures) {
+      const {x,y,w,h}=item;
+      if(item.kind==='plant')this.drawPlant(c,x+w/2,y+h,.8);
+      else if(item.kind==='visitor-chair')this.drawChair(c,x+w/2,y+h/2,'#8c987b');
+      else if(item.kind==='sofa'){this.ellipse(c,x+w/2,y+h+6,w/2+5,8,'#ac99747a');this.rect(c,x,y,w,h,'#5f7762');this.rect(c,x+6,y+6,w-12,h-12,'#a9b297');this.rect(c,x+8,y+8,w-16,9,'#c2c8ad');for(let i=1;i<=2;i++)this.rect(c,x+w*i/3,y+14,2,h-22,'#728c71');}
+      else {this.rect(c,x,y,w,h,'#768577');this.rect(c,x+4,y+4,w-8,h-8,'#aab29c');for(let i=1;i<=3;i++){this.rect(c,x+6,y+i*h/4,w-12,2,'#758772');this.rect(c,x+w/2-7,y+i*h/4-8,14,3,'#c6c3a5');}}
+    }
+    if(l.interior) {
+      const title=SECTOR_NAMES[l.location.room] || '';
+      const px=f.x+f.w-220,py=f.y+f.h-105;
+      this.rect(c,px,py,155,42,'#cbb891');this.rect(c,px+5,py+5,145,32,'#ece4ca');this.text(c,title.toUpperCase(),px+77,py+25,10,'#587462','center',700);
+      if(l.location.room==='finance') {
+        this.rect(c,f.x+24,f.y+70,78,91,'#a6875c');this.rect(c,f.x+29,f.y+75,68,81,'#ece7cc');
+        [35,51,43,64].forEach((h,i)=>this.rect(c,f.x+35+i*13,f.y+149-h,8,h,['#82a085','#b89868'][i%2]));
+      }
+      this.rect(c,f.x+14,f.y+8,8,f.h-30,l.glass?'#a5c9be':'#577664');this.rect(c,f.x+f.w-22,f.y+8,8,f.h-30,l.glass?'#a5c9be':'#577664');
+      if(l.glass)for(let y=f.y+35;y<f.y+f.h-30;y+=100){this.rect(c,f.x+15,y,6,3,'#e8eee0');this.rect(c,f.x+f.w-22,y,6,3,'#e8eee0');}
+      const d=l.returnDoor;this.rect(c,d.x-5,d.y-4,d.w+10,d.h+8,'#587060');this.rect(c,d.x,d.y,d.w,d.h,l.glass?'#aac6b8':'#a17b50');
+      this.polygon(c,[[d.x+d.w/2,d.y+4],[d.x+d.w/2-8,d.y+16],[d.x+d.w/2+8,d.y+16]],'#efe3be');
+    }
   }
   drawFinanceBoard(c) {
     const board=this.layout.financeBoard;

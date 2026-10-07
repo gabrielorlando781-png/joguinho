@@ -1,3 +1,5 @@
+import { createOfficeLayout } from './office-layouts.js';
+import { ensureBuilding, getVerticalEligibility, validPlacements, roomExists, BUILDING_SECTORS, floorName } from './office-building.js';
 import { createOffice, validOffice, getOfficeOverview, getRoomEffects, getComputerMultiplier, getItemEligibility, getExpansionEligibility, getRoomEligibility, getComputerEligibility, getRoomActionEligibility } from './office-progression.js';
 import { WORK_PUZZLE_COUNT, createWorkPuzzles, validWorkSession } from './work-puzzles.js';
 import { isLocalTestState } from './local-test.js';
@@ -259,6 +261,7 @@ export function loadGame(storageKey = SAVE_KEY) {
     // Never start advancing a restored company before the player presses play.
     if (saved.state.workSession === undefined) saved.state.workSession = null;
     saved.state.paused = true;
+    ensureBuilding(saved.state);
     ensureFinance(saved.state);
     return saved.state;
   } catch {
@@ -442,6 +445,55 @@ export function expandOffice(state, targetStage = null) {
   recordMoney(state, -allowed.price, `Mudança: ${allowed.next.name}`);
   addLog(state, `A empresa mudou para ${allowed.next.name}. ${allowed.next.description}`);
   return result(true, `Mudança concluída: ${allowed.next.name}. O novo aluguel já entra no próximo fechamento.`, { stage: allowed.next });
+}
+
+export function expandBuilding(state, id) {
+  const allowed = getVerticalEligibility(state, id);
+  if (!allowed.ok) return result(false, allowed.reason);
+  const b = ensureBuilding(state);
+  if (allowed.floors) b.floors = allowed.floors;
+  else b.elevator = true;
+  b.revision++;
+  recordMoney(state, -allowed.price, `Prédio: ${allowed.name}`);
+  addLog(state, `${allowed.name} instalado. ${allowed.description}`);
+  return result(true, `${allowed.name} pronto. Organize os setores na planta e use a circulação do prédio.`);
+}
+
+export function setOfficeLayout(state, placements) {
+  if (!running(state)) return result(false, 'A empresa está encerrada.');
+  const b = ensureBuilding(state);
+  if (!validPlacements(placements, b.floors)) return result(false, 'Planta inválida: use espaços distintos em andares adquiridos.');
+  b.placements = Object.fromEntries(BUILDING_SECTORS.map(id => [id, { ...placements[id] }]));
+  if (b.location.room && BUILDING_SECTORS.includes(b.location.room)) b.location.floor = b.placements[b.location.room].floor;
+  b.revision++;
+  state.officePosition = { x: 0, y: 0 };
+  addLog(state, 'Planta reorganizada. Portas e corredores preservados; móveis e equipe mantidos.');
+  return result(true, 'Planta aplicada. Volte ao escritório para conhecer a nova distribuição.');
+}
+
+export function moveOfficeLocation(state, action, targetFloor = null) {
+  if (typeof action !== 'string') return result(false, 'Passagem inválida.');
+  const b = ensureBuilding(state), current = b.location;
+  if (action.startsWith('enter:')) {
+    const room = action.slice(6);
+    if (current.room !== null || !roomExists(state.office, room, current.floor)) return result(false, 'Esta porta não leva a uma sala disponível neste andar.');
+    b.location = { floor: current.floor, room };
+  } else if (action === 'leave-room') {
+    if (!current.room) return result(false, 'Você já está no corredor.');
+    b.location = { floor: current.floor, room: null };
+  } else {
+    if (current.room) return result(false, 'Saia da sala antes de trocar de andar.');
+    const next = action === 'stairs:up' ? current.floor + 1 : action === 'stairs:down' ? current.floor - 1 : action === 'elevator' ? targetFloor : NaN;
+    if (!Number.isInteger(next) || next < 0 || next >= b.floors || next === current.floor || (action === 'elevator' && !b.elevator)) return result(false, 'Este andar não está disponível por essa passagem.');
+    const travel = Math.abs(next - current.floor) * (action === 'elevator' ? .025 : .1);
+    recordTravel(state, travel * 1400);
+    b.location = { floor: next, room: null };
+  }
+  const layout = createOfficeLayout(state.office);
+  const arrivalAction = action === 'leave-room' ? `enter:${current.room}` : action === 'stairs:up' ? 'stairs:down' : action === 'stairs:down' ? 'stairs:up' : action === 'elevator' ? 'elevator' : null;
+  const arrival = layout.stations.find(s => s.action === arrivalAction) || layout.spawn;
+  state.officePosition = { x: arrival.x, y: arrival.y };
+  return result(true, `${floorName(b.location.floor)} · ${b.location.room || 'corredor'}`);
 }
 
 export function upgradeRoom(state, sectorId, targetLevel = null) {

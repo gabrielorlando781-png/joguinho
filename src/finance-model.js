@@ -31,7 +31,7 @@ export function expenseCategory(label) {
   if (/Imprevisto:/.test(label)) return 'events';
   if (/Pausa|Descanso/.test(label)) return 'comfort';
   if (/Antecipação|Renegociação/.test(label)) return 'fees';
-  if (/Escritório:|Mudança:|Sala:|Computador:|Cafeteira|Quadro de ideias|Mesa compartilhada|Cadeira|Servidor/.test(label)) return null;
+  if (/Prédio:|Escritório:|Mudança:|Sala:|Computador:|Cafeteira|Quadro de ideias|Mesa compartilhada|Cadeira|Servidor/.test(label)) return null;
   return 'other';
 }
 export function createFinance(state, imported = false) {

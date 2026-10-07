@@ -65,6 +65,7 @@ Entre em **Meu PC → Internet**. A Espaço & Cia. abre como um site dentro do c
 | Departamento | O que encontrar |
 | --- | --- |
 | Expansões de área | Garagem, sala comercial e andar inteiro, com capacidade e aluguel |
+| Andares e circulação | Segundo e terceiro andar, escadas incluídas e elevador para todos os pavimentos |
 | Salas e divisórias | Divisórias, salas dedicadas, vidro e salas especiais, separadas por classe e setor |
 | Mesas e cadeiras | Novos postos e cadeiras destinadas a uma mesa específica |
 | Computadores | Três níveis de equipamento para cada posto existente |
@@ -124,7 +125,7 @@ O espaço é limitado. Mesas, salas, descanso e equipamentos disputam posições
 | Sala comercial | 16 | 5 | R$ 6.500 | R$ 110 |
 | Andar inteiro | 26 | 9 | R$ 16.000 | R$ 230 |
 
-Internet e serviços somam **R$ 35 por dia**. Ampliar não depende apenas do dinheiro: a sala comercial pede uma entrega, dois contratos e reputação 14; o andar inteiro pede quatro entregas, cinco contratos, duas pessoas no time e reputação 24. Cada endereço troca o mapa; os móveis e as salas permanecem nas posições planejadas.
+Internet e serviços somam **R$ 35 por dia**. Ampliar não depende apenas do dinheiro: a sala comercial pede uma entrega, dois contratos e reputação 14; o andar inteiro pede quatro entregas, cinco contratos, duas pessoas no time e reputação 24. Cada endereço troca o mapa e preserva a distribuição escolhida na planta. O escritório tem corredores mais amplos e espaços separados para cada setor.
 
 Uma mesa com computador básico custa **R$ 650**, e a cadeira, **R$ 280**. Sem um posto completo livre não há contratação. O computador pertence ao posto e afeta apenas quem o utiliza:
 
@@ -149,7 +150,7 @@ Desenvolvimento, Comercial, RH e Financeiro evoluem de forma independente:
 
 O custo de construção é pago a cada avanço de nível. Cada nível substitui a ocupação e os custos contínuos do anterior. Divisórias dependem do progresso do setor; salas dedicadas exigem endereço comercial e salas de vidro exigem andar inteiro, quatro entregas e reputação 25.
 
-O Comercial melhora a chance de fechar propostas; Desenvolvimento reduz bugs e melhora a qualidade; RH melhora a avaliação e a produtividade das novas contratações; Financeiro reduz atrasos de pagamentos. Ruído tira capacidade de desenvolvimento e eleva o estresse. Sinergia ajuda revisões e previne bloqueios. As paredes e portas aparecem no mapa; o vidro fica transparente.
+O Comercial melhora a chance de fechar propostas; Desenvolvimento reduz bugs e melhora a qualidade; RH melhora a avaliação e a produtividade das novas contratações; Financeiro reduz atrasos de pagamentos. Ruído tira capacidade de desenvolvimento e eleva o estresse. Sinergia ajuda revisões e previne bloqueios. Divisórias ficam no ambiente comum, com colisões e abertura escolhida na planta. Salas dedicadas e de vidro têm uma porta no corredor: clique ou pressione E para entrar no interior e caminhe até a mesa ou quadro para consultar o setor. Entrar na sala não abre o relatório automaticamente. A porta Corredor leva de volta ao mesmo ponto do andar. As salas de vidro têm fachada transparente e interior com acabamento de vidro. Reuniões e CEO também possuem cômodos próprios.
 
 ### Salas especiais
 
@@ -163,13 +164,36 @@ A **sala do CEO** custa R$ 8.500, ocupa três posições, acrescenta R$ 18/dia e
 
 Cada ação especial tem limite diário e usa o mesmo orçamento de oito horas. A manutenção é lançada no financeiro a cada 28 dias, inclusive se a data cair no fim de semana. A consulta **Financeiro → A pagar** mostra os valores e a próxima cobrança.
 
+## Planta e andares
+
+No computador, abra **Internet → Espaço & Cia. → Planta**, ou **Meu escritório → Editar planta**. A loja física também oferece **Editar planta**.
+
+1. Selecione Desenvolvimento, Comercial, RH ou Financeiro.
+2. Escolha um andar adquirido e clique no espaço desejado. Se houver outro setor, as posições serão trocadas.
+3. Em setores abertos ou com divisórias, escolha a abertura norte, sul, leste ou oeste. Salas dedicadas mantêm a porta voltada para o corredor.
+4. **Aplicar planta** instala a distribuição; **Cancelar** descarta o rascunho. Reorganizar não cobra outra compra, e mesas, equipamentos, equipe e progresso acompanham o setor.
+
+Corredores, escadas e elevador permanecem reservados para preservar a circulação. A planta e o cômodo atual são salvos. Saves antigos recebem a distribuição inicial e uma posição segura, preservando a empresa e seu histórico financeiro.
+
+A categoria **Andares e circulação** oferece:
+
+| Expansão | Compra | Posições / postos adicionais | Aluguel diário adicional | Manutenção por 28 dias | Requisitos |
+| --- | --- | --- | --- | --- | --- |
+| Segundo andar | R$ 14.000 | 16 / 6 | R$ 160 | R$ 70 | Andar inteiro, 6 entregas, 2 pessoas e reputação 28 |
+| Terceiro andar | R$ 22.000 | 16 / 6 | R$ 190 | R$ 90 | Segundo andar, 10 entregas, 3 pessoas e reputação 40 |
+| Elevador | R$ 6.000 | Conecta todos os pavimentos | R$ 4 | R$ 180 | Pelo menos dois andares |
+
+Escadas vêm com o novo pavimento. Clique ou use **E** para subir ou descer um andar; no elevador, escolha o destino no painel. Escadas usam 0,1h por pavimento e o elevador 0,025h em dias úteis, respeitando o limite diário de 0,75h junto com as caminhadas.
+
+O prédio completo oferece até **58 posições e 21 postos**. Os primeiros nove acompanham Desenvolvimento; os seis seguintes ficam no estúdio de apoio do segundo andar e os últimos seis no terceiro. O grupo de candidatos permanece o atual. Os setores podem ser transferidos entre quatro espaços por pavimento; copa e descanso completam cada andar. Reuniões, CEO e os serviços de gestão permanecem no térreo.
+
 ## Salvamento
 
 O progresso fica no `localStorage` deste navegador. Empresa, perfil, equipe, projetos, mobília, financeiro, posição do personagem e sessões de puzzles são salvos automaticamente. Recarregar restaura a partida com o tempo pausado. Jogos das versões 1 e 2 são migrados preservando o progresso. O escritório antigo vira uma sala aberta no menor endereço capaz de acomodar todos os postos e melhorias existentes. A primeira manutenção é agendada para 28 dias após a migração, sem cobrança retroativa.
 
 Limpar os dados do navegador apaga a partida. Não há conta, sincronização entre dispositivos ou salvamento no servidor. Você pode começar outra história pelo **Diário → Guia & identidade**, com confirmação antes de substituir a empresa.
 
-Esta versão aprofunda contratos, equipe, eventos, produto e evolução do escritório, usando parâmetros econômicos simplificados. Os layouts são planejados; montagem livre do escritório, novos andares, concorrentes e expansão do SaaS após o MVP ficam para próximos capítulos. Os modelos de contrato e o grupo de candidatos continuam limitados.
+Esta versão aprofunda contratos, equipe, eventos, produto e evolução do escritório, usando parâmetros econômicos simplificados. O editor organiza os setores em espaços seguros de até três pavimentos. Montagem livre de cada móvel, concorrentes e expansão do SaaS após o MVP continuam fora desta versão. Os modelos de contrato e o grupo de candidatos continuam limitados.
 
 ## Executar
 
@@ -194,7 +218,7 @@ npm run test:browser
 
 Para verificar apenas o navegador e as compras da loja: `GAME_BROWSER_SUITE=shop npm run test:browser`.
 
-A suíte Node cobre 88 cenários de negócio, orçamento de horas, puzzles, senha do PC, comandos do terminal, imprevistos, crédito, produto, progressão do escritório, efeitos das salas, manutenção e migração dos saves. O teste de navegador usa Python Playwright e Chromium, disponíveis nesta imagem de nuvem. Ele inicia seu próprio servidor Vite em uma porta livre, usa contextos isolados e percorre os setores com o personagem, verificando contratos, equipe, entregas, recebimentos, compras, ampliações, salas, ações especiais, senha e recuperação do PC, comandos digitados, janelas, salvamento, migração e layout móvel. Encerra apenas o servidor que iniciou. `GAME_TEST_ARTIFACTS` permite escolher a pasta das capturas.
+A suíte Node cobre 111 cenários de negócio, orçamento de horas, puzzles, senha do PC, comandos do terminal, imprevistos, crédito, produto, progressão do escritório, efeitos das salas, manutenção e migração dos saves. O teste de navegador usa Python Playwright e Chromium, disponíveis nesta imagem de nuvem. Ele inicia seu próprio servidor Vite em uma porta livre, usa contextos isolados e percorre os setores com o personagem, verificando contratos, equipe, entregas, recebimentos, compras, ampliações, salas, ações especiais, senha e recuperação do PC, comandos digitados, janelas, salvamento, migração e layout móvel. Encerra apenas o servidor que iniciou. `GAME_TEST_ARTIFACTS` permite escolher a pasta das capturas.
 
 ## Estrutura
 
@@ -203,7 +227,9 @@ A suíte Node cobre 88 cenários de negócio, orçamento de horas, puzzles, senh
 | `src/main.js` | Consultas nos setores, perfil e ciclo de tempo |
 | `src/ui.js` | Ícones, retratos e formatação da interface |
 | `src/office.js` | Escritório em Canvas 2D, personagem, câmera, caminhos e colisões |
-| `src/office-layouts.js` | Mapas planejados, postos, paredes e portas por estágio |
+| `src/office-layouts.js` | Corredores, espaços reorganizáveis, interiores, portas e circulação por andar |
+| `src/office-building.js` | Andares, elevador, planta, custos e validação de localização |
+| `src/layout-editor.js` | Rascunho da planta, troca de setores e orientação das divisórias |
 | `src/office-progression.js` | Catálogo, requisitos, ocupação, custos e efeitos do escritório |
 | `src/store-ui.js` | Loja contextual com custos, vagas, salas e identidade |
 | `src/computer-ui.js` | Área de trabalho, aplicativos e interface dos puzzles |
