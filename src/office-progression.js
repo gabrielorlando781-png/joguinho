@@ -1,17 +1,17 @@
-import { createBuilding, buildingCosts, validBuilding } from './office-building.js';
+import { validPlacement } from './office-placement.js';
 import { isLocalTestState } from './local-test.js';
 // One catalog feeds the shop, scene, economy and save validation.
 export const OFFICE_STAGES = [
   { id: 'garage', name: 'Garagem', price: 0, slots: 6, maxPosts: 2, dailyRent: 55, requirements: {}, description: 'Uma sala compartilhada e dois postos possíveis. Aluguel de R$ 55 por dia, mais R$ 35 de internet e serviços.' },
   { id: 'commercial', name: 'Sala comercial', price: 6500, slots: 16, maxPosts: 5, dailyRent: 110, requirements: { delivered: 1, contracts: 2, reputation: 14 }, description: 'Até cinco postos e espaço para separar os setores. Aluguel de R$ 110 por dia, mais serviços e salas.' },
-  { id: 'floor', name: 'Andar inteiro', price: 16000, slots: 26, maxPosts: 9, dailyRent: 230, requirements: { delivered: 4, contracts: 5, employees: 2, reputation: 24 }, description: 'Até nove postos e espaço para salas de vidro e a sala do CEO. Aluguel de R$ 230 por dia, mais serviços e salas.' },
+  { id: 'floor', name: 'Andar inteiro', price: 16000, slots: 58, maxPosts: 21, dailyRent: 230, requirements: { delivered: 4, contracts: 5, employees: 2, reputation: 24 }, description: 'Setores mais espaçosos, até 21 postos e espaço para salas de vidro e a sala do CEO. Aluguel de R$ 230 por dia, mais serviços e salas.' },
 ];
 
 export const ROOM_LEVELS = [
   { id: 'open', name: 'Espaço aberto', price: 0, slots: 0, monthlyMaintenance: 0, dailyRent: 0, noise: 1, synergy: 1, description: 'Máxima sinergia e revisões rápidas. Negociações e vendas interrompem o desenvolvimento e aumentam o estresse.' },
   { id: 'partition', name: 'Divisórias', price: 650, slots: 1, monthlyMaintenance: 15, dailyRent: 0, noise: 0.5, synergy: 0.93, description: 'Reduz pela metade a transmissão de ruído deste setor. Usa uma posição e perde um pouco de sinergia.' },
-  { id: 'dedicated', name: 'Sala dedicada', price: 2400, slots: 2, monthlyMaintenance: 100, dailyRent: 12, noise: 0, synergy: 0.78, description: 'Um cômodo independente, acessível por uma porta no corredor. Isola o ruído e libera o bônus pleno do setor. Usa duas posições, custa R$ 12/dia de aluguel extra e reduz a sinergia.' },
-  { id: 'glass', name: 'Sala de vidro', price: 4200, slots: 2, monthlyMaintenance: 180, dailyRent: 16, noise: 0, synergy: 0.9, description: 'Um cômodo independente com fachada e paredes de vidro. Mantém o isolamento e os bônus, recupera parte da sinergia e impressiona os clientes. Usa duas posições e custa R$ 16/dia extra.' },
+  { id: 'dedicated', name: 'Sala dedicada', price: 2400, slots: 2, monthlyMaintenance: 100, dailyRent: 12, noise: 0, synergy: 0.78, description: 'Isola o ruído e libera o bônus pleno do setor. Usa duas posições, custa R$ 12/dia de aluguel extra e reduz a sinergia.' },
+  { id: 'glass', name: 'Sala de vidro', price: 4200, slots: 2, monthlyMaintenance: 180, dailyRent: 16, noise: 0, synergy: 0.9, description: 'Mantém o isolamento e os bônus, recupera parte da sinergia e impressiona os clientes. Usa duas posições e custa R$ 16/dia extra.' },
 ];
 
 export const OFFICE_SECTORS = [
@@ -59,7 +59,7 @@ export function createOffice(state, migrated = false) {
     stage: 'garage', workstations: [{ id: 'post-1', desk: true, chair: true, computerLevel: 1, employeeId: 'founder' }], nextWorkstationId: 2,
     rooms: Object.fromEntries(OFFICE_SECTORS.map(({ id }) => [id, 'open'])), special: { meeting: false, ceo: false },
     amenities: { lounge: false, floor: false, decor: false, banner: false }, banner: { text: state.profile.company.slice(0, 40), color: '#63866a' },
-    building: createBuilding(), nextMaintenanceDay: state.day + 28, bannerProgress: 0, ceoIsolation: 0, salesActivityHours: 0,
+    nextMaintenanceDay: state.day + 28, bannerProgress: 0, ceoIsolation: 0, salesActivityHours: 0,
     actions: Object.fromEntries(ROOM_ACTIONS.map(({ id }) => [id, 0])),
     bonuses: { alignmentUntil: 0, presentationUntil: 0, onboardingUntil: 0, focusDay: 0 }, migrated,
   };
@@ -103,17 +103,15 @@ export function getComputerMultiplier(state, employeeId = 'founder') {
 export function getOfficeOverview(state, includeEligibility = true) {
   const office = state.office;
   if (!office) return null;
-  const baseStage = OFFICE_STAGES.find((entry) => entry.id === office.stage) || OFFICE_STAGES[0];
-  const building = buildingCosts(office);
-  const stage = { ...baseStage, slots: baseStage.slots + building.extraSlots, maxPosts: baseStage.maxPosts + building.extraPosts };
+  const stage = OFFICE_STAGES.find((entry) => entry.id === office.stage) || OFFICE_STAGES[0];
   const roomLevels = OFFICE_SECTORS.map((sector) => levelFor(office.rooms[sector.id]));
   const extras = ['coffee-machine', 'whiteboard'].filter((id) => hasOldFurniture(state, id));
   const usedSlots = office.workstations.length + roomLevels.reduce((sum, level) => sum + level.slots, 0)
     + (office.amenities.lounge ? 2 : 0) + (office.special.meeting ? 3 : 0) + (office.special.ceo ? 3 : 0) + extras.length;
   const capacity = office.workstations.filter((post) => post.employeeId !== 'founder' && readyPost(post)).length;
   const freePosts = office.workstations.filter((post) => post.employeeId === null && readyPost(post)).length;
-  const dailyRent = stage.dailyRent + building.dailyRent + 35 + roomLevels.reduce((sum, level) => sum + level.dailyRent, 0) + (office.special.meeting ? 10 : 0) + (office.special.ceo ? 18 : 0);
-  const monthlyMaintenance = building.monthlyMaintenance + office.workstations.reduce((sum, post) => sum + COMPUTER_LEVELS[post.computerLevel - 1].monthlyMaintenance, 0)
+  const dailyRent = stage.dailyRent + 35 + roomLevels.reduce((sum, level) => sum + level.dailyRent, 0) + (office.special.meeting ? 10 : 0) + (office.special.ceo ? 18 : 0);
+  const monthlyMaintenance = office.workstations.reduce((sum, post) => sum + COMPUTER_LEVELS[post.computerLevel - 1].monthlyMaintenance, 0)
     + roomLevels.reduce((sum, level) => sum + level.monthlyMaintenance, 0) + (office.amenities.lounge ? 35 : 0)
     + (office.special.meeting ? 120 : 0) + (office.special.ceo ? 200 : 0) + extras.reduce((sum, id) => sum + SHOP_ITEMS.find((item) => item.id === id).monthlyMaintenance, 0);
   const effects = getRoomEffects(state);
@@ -174,7 +172,7 @@ export function getItemEligibility(state, id, options = {}) {
 
 export function getExpansionEligibility(state) {
   const next = OFFICE_STAGES[stageIndex(state.office.stage) + 1];
-  if (!next) return { ok: false, reason: 'Amplie o prédio na categoria Andares e circulação.', price: 0, slots: 0, next: null };
+  if (!next) return { ok: false, reason: 'Você já ocupa um andar inteiro.', price: 0, slots: 0, next: null };
   return eligibility(state, next, 0, next.requirements, { next });
 }
 
@@ -217,7 +215,7 @@ export function getRoomActionEligibility(state, action) {
 export function validOffice(state) {
   const office = state.office;
   const integer = (value, min, max = 100000000) => Number.isInteger(value) && value >= min && value <= max;
-  if (!office || !validBuilding(office) || !OFFICE_STAGES.some((stage) => stage.id === office.stage) || typeof office.migrated !== 'boolean') return false;
+  if (!office || !validPlacement(office.placement) || !OFFICE_STAGES.some((stage) => stage.id === office.stage) || typeof office.migrated !== 'boolean') return false;
   if (!Array.isArray(office.workstations) || !office.workstations.length || office.workstations.length > 21) return false;
   const posts = office.workstations;
   if (!posts.every((post) => post && /^post-\d+$/.test(post.id) && typeof post.desk === 'boolean' && post.desk && typeof post.chair === 'boolean' && integer(post.computerLevel, 1, 3) && (post.employeeId === null || post.employeeId === 'founder' || state.employees.some((person) => person.id === post.employeeId)) && (post.employeeId === null || readyPost(post)))) return false;

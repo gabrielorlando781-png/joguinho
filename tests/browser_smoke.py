@@ -37,8 +37,6 @@ def instrument_scene(page):
     page.evaluate("""async () => {
       const {OfficeScene} = await import('/src/office.js');
       const draw = OfficeScene.prototype.draw;
-      const report=OfficeScene.prototype.reportMovement;
-      OfficeScene.prototype.reportMovement=function(...args){const distance=this.travelAccumulator;report.apply(this,args);if(distance>0&&this.travelAccumulator===0)window.__officeTravelDistance=(window.__officeTravelDistance||0)+distance;};
       OfficeScene.prototype.draw = function (...args) {
         window.__testedScene = this;
         return draw.apply(this, args);
@@ -72,39 +70,21 @@ def visit(page, action, pointer=False, authenticate=True):
     """Use ordinary walking routes, with no character teleportation."""
     close_station(page)
     before = page.evaluate("""action => ({x:window.__testedScene.player.x,
-      y:window.__testedScene.player.y, travelled:window.__officeTravelDistance||0, near:window.__testedScene.isNearStation(action)})""", action)
-    activation_near = before['near']
+      y:window.__testedScene.player.y, near:window.__testedScene.isNearStation(action)})""", action)
     if pointer:
-        # Reveal off-screen sectors by tapping visible floor along the walking
-        # route. The moving phone camera cannot click an off-screen label.
-        for _ in range(12):
-            target = page.evaluate("""action => {
-              const scene=window.__testedScene, station=scene.getStation(action);
-              if(!station)return null;
-              const rect=scene.canvas.getBoundingClientRect();
-              const pixel=p=>({x:rect.left+scene.offsetX+p.x*scene.scale,y:rect.top+scene.offsetY+p.y*scene.scale});
-              const visible=p=>p.x>rect.left+12&&p.x<rect.right-12&&p.y>rect.top+12&&p.y<rect.bottom-12&&document.elementFromPoint(p.x,p.y)===scene.canvas;
-              const label=pixel({x:station.labelX,y:station.labelY});
-              if(visible(label))return {...label,label:true};
-              const path=scene.findPath(scene.player,station)||[];
-              const point=[...path].reverse().find(p=>Math.hypot(p.x-scene.player.x,p.y-scene.player.y)>24&&!scene.hotspotAt(p)&&visible(pixel(p)));
-              return point?{...pixel(point),label:false}:null;
-            }""", action)
-            assert target, f'No visible floor route toward {action}.'
-            activation_near=page.evaluate('action=>window.__testedScene.isNearStation(action)', action)
-            page.mouse.click(target['x'],target['y'])
-            if target['label']:
-                break
-            page.wait_for_function('window.__testedScene.destination===null',timeout=20000)
-            assert not page.locator('#station-panel').is_visible(), 'Ground taps must only walk.'
-        else:
-            raise AssertionError(f'The camera did not reveal {action} after ordinary floor taps.')
+        target = page.evaluate("""action => {
+          const scene=window.__testedScene, station=scene.getStation(action);
+          const rect=scene.canvas.getBoundingClientRect();
+          return {x:rect.left+scene.offsetX+station.labelX*scene.scale,
+                  y:rect.top+scene.offsetY+station.labelY*scene.scale};
+        }""", action)
+        page.mouse.click(target['x'], target['y'])
     else:
         # Exercise the same routing API used by a canvas click, including sectors
         # outside the moving camera. This never teleports or opens a station early.
         assert page.evaluate('action => window.__testedScene.requestInteraction(action)', action)
     panel = page.locator(f'#world-stage #station-panel[data-station="{action}"]')
-    if not activation_near:
+    if not before['near']:
         assert not panel.is_visible(), f'{action} opened before the character arrived.'
     try:
         panel.wait_for(state='visible', timeout=20000)
@@ -120,8 +100,8 @@ def visit(page, action, pointer=False, authenticate=True):
         raise
     assert page.evaluate('action => window.__testedScene.isNearStation(action)', action), f'{action} opened outside its sector.'
     if not before['near']:
-        after = page.evaluate('({x:window.__testedScene.player.x,y:window.__testedScene.player.y,travelled:window.__officeTravelDistance||0})')
-        assert after['travelled']-before['travelled']>10, 'Opening a sector must involve actual walking, even when two room templates share coordinates.'
+        after = page.evaluate('({x:window.__testedScene.player.x,y:window.__testedScene.player.y})')
+        assert abs(after['x']-before['x'])+abs(after['y']-before['y']) > 10
     assert page.locator('#office-canvas').is_visible(), 'Sector decisions must keep the office visible.'
     if action == 'work' and authenticate:
         unlock_computer(page)
@@ -1296,95 +1276,74 @@ def verify_finance_board(browser, url):
     checks.append('Renegotiation UI records the promised extension, actual discount and time use, disallows repeating and exposes the expense in the monthly result')
 
 
-def verify_building(browser, url):
+
+def verify_office_experience(browser,url):
     fixture=json.loads(subprocess.check_output(['node','--input-type=module','-e', """
-      import {createGame,acceptProject,purchaseOfficeItem,interviewCandidate,hireEmployee} from './src/simulation.js';
+      import {createGame,purchaseOfficeItem,interviewCandidate,hireEmployee} from './src/simulation.js';
       const state=createGame({name:'Marina',company:'Aurora',age:28,trait:'balanced'});
       state.office.stage='floor';state.cash=150000;state.reputation=60;state.stats.delivered=12;state.allocation={sales:2,delivery:3,quality:3};
       for(const id of ['lucas','marina','bia']){purchaseOfficeItem(state,'desk');purchaseOfficeItem(state,'chair');interviewCandidate(state,id);hireEmployee(state,id,'CLT');}
-      for(const lead of [...state.leads])acceptProject(state,lead.id);
+      for(const id of Object.keys(state.office.rooms))state.office.rooms[id]='glass';state.office.special={meeting:true,ceo:true};
       console.log(JSON.stringify({version:3,state}));
     """],cwd=ROOT,text=True))
-    context,page=saved_context(browser,url,fixture)
-    page.screenshot(path=str(ARTIFACTS/'building-corridors.png'),animations='disabled')
-    def pc_shop():
-        visit(page,'work');return computer_app(page,'expansion')
-    def purchase(product):
-        panel=pc_shop();category='vertical' if product.startswith('building:') else 'rooms'
-        panel.locator(f'[data-shop-category="{category}"]').first.click()
-        panel.locator(f'[data-shop-product="{product}"]').first.click()
-        assert panel.locator(f'[data-shop-buy="{product}"]').is_enabled()
-        before=company(page)['cash'];panel.locator(f'[data-shop-buy="{product}"]').click()
-        assert company(page)['cash']<before
-        return panel
-    purchase('building:floor-2');purchase('building:floor-3');purchase('building:elevator')
-    assert company(page)['office']['building']['floors']==3 and company(page)['office']['building']['elevator']
-    for level in ['partition','dedicated']:
-        purchase('room:finance:'+level)
-    close_station(page)
-    assert page.evaluate('window.__testedScene.getStation("finance")') is None
-    assert page.evaluate('window.__testedScene.requestInteraction("enter:finance")')
-    page.wait_for_function('window.__testedScene.state.office.building.location.room==="finance"')
-    assert not page.locator('#station-panel').is_visible(), 'A door must enter a room, not open its business screen.'
-    page.screenshot(path=str(ARTIFACTS/'building-finance-dedicated.png'),animations='disabled')
-    visit(page,'finance');assert page.locator('.finance-board').is_visible()
-    purchase('room:finance:glass')
-    panel=pc_shop();panel.locator('[data-layout-open]').first.click()
-    before=json.dumps(company(page),sort_keys=True)
-    panel.locator('[data-layout-sector="finance"]').click();panel.locator('[data-layout-floor="1"]').click();panel.locator('[data-layout-bay="ne"]').click()
-    assert json.dumps(company(page),sort_keys=True)==before
-    panel.locator('[data-layout-cancel]').click();assert json.dumps(company(page),sort_keys=True)==before
-    panel.locator('[data-layout-open]').first.click();panel.locator('[data-layout-sector="finance"]').click();panel.locator('[data-layout-floor="1"]').click();panel.locator('[data-layout-bay="ne"]').click()
-    page.screenshot(path=str(ARTIFACTS/'building-layout-editor.png'),animations='disabled')
-    panel.locator('[data-layout-save]').click()
-    assert company(page)['office']['building']['placements']['finance']['floor']==1
-    close_station(page)
-    assert page.evaluate('window.__testedScene.requestInteraction("stairs:up")')
-    page.wait_for_function('window.__testedScene.state.office.building.location.floor===1')
-    assert page.evaluate('window.__testedScene.requestInteraction("enter:finance")')
-    page.wait_for_function('window.__testedScene.state.office.building.location.room==="finance"')
-    assert page.evaluate('window.__testedScene.layout.glass')
-    assert not page.locator('#station-panel').is_visible()
-    page.screenshot(path=str(ARTIFACTS/'building-finance-glass.png'),animations='disabled')
-    # Click the actual board in the room, rather than opening a report by route.
-    point=page.evaluate("""()=>{const s=window.__testedScene,b=s.layout.financeBoard,r=s.canvas.getBoundingClientRect();return {x:r.left+s.offsetX+(b.x+b.w/2)*s.scale,y:r.top+s.offsetY+(b.y+b.h/2)*s.scale};}""")
-    page.mouse.click(point['x'],point['y']);page.locator('.finance-board').wait_for(state='visible',timeout=20000)
-    assert page.evaluate('window.__testedScene.isNearStation("finance")')
-    close_station(page);page.reload(wait_until='networkidle');instrument_scene(page)
-    assert company(page)['office']['building']['location']=={'floor':1,'room':'finance'}
-    assert page.evaluate('window.__testedScene.requestInteraction("leave-room")')
-    page.wait_for_function('window.__testedScene.state.office.building.location.room===null')
-    assert page.evaluate('window.__testedScene.requestInteraction("elevator")')
-    page.locator('[data-elevator-floor="2"]').wait_for(state='visible',timeout=20000)
-    page.locator('[data-elevator-floor="2"]').click();page.wait_for_function('window.__testedScene.state.office.building.location.floor===2')
-    assert page.evaluate('window.__testedScene.requestInteraction("elevator")')
-    page.locator('[data-elevator-floor="0"]').click();page.wait_for_function('window.__testedScene.state.office.building.location.floor===0')
-    checks.append('Purchased floors and elevator have real passages; finance dedicated/glass interiors require door entry, physical board access and persist room/floor on reload')
-    checks.append('The browser floor-plan editor previews and cancels without affecting the company, then relocates the purchased room upstairs only when applied')
-    for sector,action in [('sales','sales'),('hr','team'),('development','work')]:
-        for level in ['partition','dedicated','glass']:purchase('room:'+sector+':'+level)
-        visit(page,action);assert company(page)['office']['building']['location']['room']==sector
-    close_station(page)
-    for action in ['finance','sales','team','work','furniture','exit']:
+    context,page=saved_context(browser,url,fixture,{'width':1920,'height':1080})
+    assert not company(page)['office'].get('building')
+    assert page.evaluate('window.__testedScene.layout.floor.w')==1700
+    for action in ['work','finance','team','sales','meeting','ceo','furniture','exit']:
         visit(page,action);assert page.evaluate('action=>window.__testedScene.isNearStation(action)',action)
     close_station(page)
-    advanced=json.loads(page.evaluate('localStorage.getItem('+json.dumps(SAVE_KEY)+')'))
-    context.close()
-    checks.append('Every upgraded department and the founder PC remain physically reachable through doors and floors; constructing development closes the former PC and allows safe reentry')
-    for viewport in [{'width':390,'height':844},{'width':320,'height':568},{'width':844,'height':390}]:
-        context,mobile=saved_context(browser,url,advanced,viewport)
-        visit(mobile,'work');panel=computer_app(mobile,'expansion');panel.locator('[data-layout-open]').first.click()
-        for floor in [0,1,2]:
-            panel.locator(f'[data-layout-floor="{floor}"]').click();assert panel.locator('.plan-cell').count()==4
-            assert mobile.evaluate('document.body.scrollWidth<=innerWidth')
-            assert panel.locator('.plan-blueprint').evaluate('(el)=>el.scrollWidth<=el.clientWidth+2'), 'The complete floor plan must fit the phone viewport.'
-        panel.locator('[data-layout-sector="sales"]').click();panel.locator('[data-layout-bay="sw"]').click()
-        mobile.screenshot(path=str(ARTIFACTS/f'building-editor-{viewport["width"]}.png'),animations='disabled')
-        panel.locator('[data-layout-cancel]').click();close_station(mobile)
-        visit(mobile,'finance');assert company(mobile)['office']['building']['location']=={'floor':1,'room':'finance'}
-        mobile.screenshot(path=str(ARTIFACTS/f'building-board-{viewport["width"]}.png'),animations='disabled')
-        context.close()
-    checks.append('Mobile and landscape support three editor floors, canceling a draft, physical stair/door journeys and the finance board inside its glass room')
+    page.screenshot(path=str(ARTIFACTS/'office-restored-large.png'),animations='disabled')
+    checks.append('The restored office is a single larger final-level map; every department, PC and special room is physically reachable')
+    before=company(page)
+    def open_editor():
+        page.locator('[data-action="settings"]').click();page.locator('[data-edit="open"]').click();page.locator('.layout-tools').wait_for(state='visible')
+    def position():
+        return page.evaluate('({x:window.__testedScene.layout.posts[1].x,y:window.__testedScene.layout.posts[1].y})')
+    def drag_post(x,y):
+        page.locator('[data-edit-select="post:post-2"]').click()
+        coords=page.evaluate("""({x,y})=>{const s=window.__testedScene,r=s.canvas.getBoundingClientRect(),post=s.layout.posts[1];return {start:{x:r.left+s.offsetX+(post.x+post.w/2)*s.scale,y:r.top+s.offsetY+(post.y+20)*s.scale},end:{x:r.left+s.offsetX+(x+post.w/2)*s.scale,y:r.top+s.offsetY+(y+20)*s.scale}};}""",{'x':x,'y':y})
+        page.mouse.move(coords['start']['x'],coords['start']['y']);page.mouse.down();page.mouse.move(coords['end']['x'],coords['end']['y'],steps=12);page.mouse.up()
+    original=position();open_editor();page.locator('[data-edit-snap]').uncheck();drag_post(860,650)
+    assert position()=={'x':860,'y':650},position()
+    assert company(page)['office']==before['office'] and company(page)['cash']==before['cash']
+    assert page.locator('[data-edit="apply"]').is_enabled()
+    page.locator('[data-edit="undo"]').click();assert position()==original
+    page.locator('[data-edit="redo"]').click();assert position()=={'x':860,'y':650}
+    page.screenshot(path=str(ARTIFACTS/'office-free-editor.png'),animations='disabled')
+    page.locator('[data-edit="cancel"]').click();assert position()==original;assert company(page)['office']==before['office']
+    checks.append('Actual pointer dragging places an owned desk at arbitrary coordinates; undo, redo and cancel preserve company resources and the original geometry')
+    open_editor();page.locator('[data-edit-snap]').uncheck();drag_post(860,650);page.locator('[data-edit="apply"]').click()
+    assert company(page)['office']['placement']['stages']['floor']['post:post-2']=={'x':860,'y':650}
+    assert company(page)['cash']==before['cash']
+    page.reload(wait_until='networkidle');instrument_scene(page);assert position()=={'x':860,'y':650}
+    open_editor();drag_post(116,237);assert page.locator('[data-edit="apply"]').is_disabled();assert 'sobrepostos' in page.locator('.edit-validation').inner_text();page.keyboard.press('Escape');assert position()=={'x':860,'y':650}
+    checks.append('Applied free furniture positions survive reload; overlapping desks are rejected and cannot overwrite the valid office')
+    open_editor();page.locator('[data-edit-select="post:post-1"]').click();page.locator('[data-edit-coordinate="x"]').fill('1103');page.locator('[data-edit-coordinate="x"]').press('Tab');page.locator('[data-edit-coordinate="y"]').fill('625');page.locator('[data-edit-coordinate="y"]').press('Tab');assert page.locator('[data-edit="apply"]').is_enabled();page.locator('[data-edit="apply"]').click()
+    visit(page,'work');assert page.evaluate('window.__testedScene.isNearStation("work")');computer_app(page,'expansion');page.locator('[data-edit="open"]').click();assert page.locator('.layout-tools').is_visible();page.locator('[data-edit="cancel"]').click();assert not page.evaluate('window.__testedScene.player.seated')
+    checks.append('An arbitrarily relocated founder PC still requires walking, supports its login/apps and opens the same direct editor from the store browser')
+    page.locator('[data-action="pause"]').click();assert company(page)['paused'] is False
+    resources={k:company(page)[k] for k in ['cash','manualDeliveryHours','travelHours']}
+    page.wait_for_function('Array.from(window.__testedScene.staff.values()).some(n=>!n.seated&&Math.hypot(n.x-n.home.x,n.y-n.home.y)>30)',timeout=20000)
+    for _ in range(20):
+        assert page.evaluate('Array.from(window.__testedScene.staff.values()).every(n=>window.__testedScene.canStand(n.x,n.y))')
+        page.wait_for_timeout(150)
+    assert {k:company(page)[k] for k in resources}==resources
+    page.screenshot(path=str(ARTIFACTS/'office-staff-walking.png'),animations='disabled')
+    page.locator('[data-action="pause"]').click();frozen=page.evaluate('Array.from(window.__testedScene.staff.values()).map(n=>[n.x,n.y])');page.wait_for_timeout(700);assert page.evaluate('Array.from(window.__testedScene.staff.values()).map(n=>[n.x,n.y])')==frozen
+    checks.append('Real hired employees leave desks, follow collision-safe walking routes and pause with the clock without consuming founder hours or company cash')
+    assert page.evaluate('window.__testedScene.requestInteraction("ceo")')
+    page.wait_for_function('window.__testedScene.doors.find(d=>d.id==="ceo").progress>.9',timeout=20000)
+    page.screenshot(path=str(ARTIFACTS/'office-door-opening.png'),animations='disabled')
+    page.locator('#station-panel[data-station="ceo"]').wait_for(state='visible',timeout=20000)
+    page.wait_for_function('window.__testedScene.doors.find(d=>d.id==="ceo").progress===0',timeout=10000)
+    checks.append('The room door visibly swings open on approach and closes after passage; the business screen opens only at the physical desk')
+    close_station(page);context.close()
+    for stage in ['garage','commercial']:
+        older=json.loads(subprocess.check_output(['node','--input-type=module','-e',"import {createGame} from './src/simulation.js';const state=createGame();state.office.stage="+json.dumps(stage)+";console.log(JSON.stringify({version:3,state}));"],cwd=ROOT,text=True))
+        context,page=saved_context(browser,url,older,{'width':1440,'height':900})
+        for action in ['work','finance','furniture','board','exit']:visit(page,action)
+        close_station(page);context.close()
+    checks.append('Both previous early-stage maps retain physical PC, finance, furniture, project and day-closing access on desktop')
 
 
 def main():
@@ -1423,24 +1382,20 @@ def main():
                 browser = p.chromium.launch(executable_path=shutil.which('chromium'), headless=True, args=['--no-sandbox'])
                 try:
                     suite = os.environ.get('GAME_BROWSER_SUITE')
-                    if suite not in ('shop','finance','building','mobile'):
+                    if suite not in ('shop','finance','experience'):
                         verify_minimal_office(browser, url)
-                    if suite not in ('shop','hud','building','mobile'):
+                    if suite not in ('shop','hud','experience'):
                         verify_finance_board(browser, url)
-                    if suite not in ('hud','finance','building','mobile'):
+                    if suite not in ('hud','finance','experience'):
                         verify_browser_shop(browser, url)
-                    if suite not in ('shop','hud','finance','mobile'):
-                        verify_building(browser,url)
-                    if suite not in ('shop', 'hud', 'finance','building','mobile'):
+                    if suite not in ('shop', 'hud', 'finance','experience'):
                         verify_computer_login(browser, url)
                         run_journey(browser, url)
                         verify_legacy_save(browser, url)
                         advanced_fixture = verify_v2_office_progression(browser, url)
                         verify_store_budget(browser, url)
                         run_mobile(browser, url, advanced_fixture)
-                    elif suite == 'mobile':
-                        fixture=json.loads(subprocess.check_output(['node','--input-type=module','-e', "import {createGame} from './src/simulation.js';const state=createGame();state.office.stage='floor';for(const id of Object.keys(state.office.rooms))state.office.rooms[id]='glass';state.office.special={meeting:true,ceo:true};console.log(JSON.stringify({version:3,state}));"],cwd=ROOT,text=True))
-                        run_mobile(browser,url,fixture)
+                    if suite=='experience':verify_office_experience(browser,url)
                     assert not errors, f'Browser errors: {errors}'
                 except Exception:
                     for index, context in enumerate(browser.contexts):

@@ -1,4 +1,3 @@
-import { VERTICAL_EXPANSIONS, getVerticalEligibility } from './office-building.js';
 import { icon, escape, money } from './ui.js';
 import {
   OFFICE_STAGES, OFFICE_SECTORS, ROOM_LEVELS, COMPUTER_LEVELS, SHOP_ITEMS,
@@ -8,7 +7,7 @@ import {
 
 const STORE_TABS = [
   ['overview', 'Escritório'], ['workstations', 'Postos & PCs'],
-  ['rooms', 'Salas'], ['vertical', 'Andares'], ['appearance', 'Identidade'],
+  ['rooms', 'Salas'], ['appearance', 'Identidade'],
 ];
 const ITEM_ICONS = {
   desk: 'grid', chair: 'chair', lounge: 'sun', floor: 'grid', decor: 'plant',
@@ -159,8 +158,7 @@ export function renderOfficeStore(state, tab = 'overview') {
   const overview = getOfficeOverview(state);
   const nav = `<nav class="in-world-tabs store-tabs" aria-label="Opções da loja do escritório">${STORE_TABS.map(([id, label]) => `<button data-store-tab="${id}" class="${id === activeTab ? 'active' : ''}" aria-current="${id === activeTab ? 'page' : 'false'}">${escape(label)}</button>`).join('')}</nav>`;
   const content = activeTab === 'workstations' ? renderWorkstations(state, overview)
-    : activeTab === 'vertical' ? `<div class="store-grid">${VERTICAL_EXPANSIONS.map(entry=>{const allowed=getVerticalEligibility(state,entry.id);return `<article class="store-card"><h3>${escape(entry.name)}</h3><p>${escape(entry.description)}</p>${price(entry.price)}${facts(entry)}${eligibilityNote(allowed,allowed.owned)}<button class="primary-button full" data-building-buy="${entry.id}" ${allowed.ok?'':'disabled'}>Comprar e instalar</button></article>`;}).join('')}</div>`
     : activeTab === 'rooms' ? renderRooms(state, overview)
       : activeTab === 'appearance' ? renderAppearance(state) : renderOverview(state, overview);
-  return `<div class="office-store"><button class="secondary-button" data-layout-open="true">${icon('grid')} Editar planta</button>${nav}${content}</div>`;
+  return `<div class="office-store"><button class="secondary-button" data-edit="open">${icon('grid')} Editar layout</button>${nav}${content}</div>`;
 }
