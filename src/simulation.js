@@ -1,5 +1,5 @@
 import { createOfficeLayout } from './office-layouts.js';
-import { validPlacement } from './office-placement.js';
+import { validPlacement, migrateFloorPlacement } from './office-placement.js';
 import { validateFloorPlan } from './office-navigation.js';
 import { createOffice, validOffice, getOfficeOverview, getRoomEffects, getComputerMultiplier, getItemEligibility, getExpansionEligibility, getRoomEligibility, getComputerEligibility, getRoomActionEligibility } from './office-progression.js';
 import { WORK_PUZZLE_COUNT, createWorkPuzzles, validWorkSession } from './work-puzzles.js';
@@ -283,6 +283,7 @@ export function loadGame(storageKey = SAVE_KEY) {
       if(refund){recordMoney(saved.state,refund,'Prédio: devolução das expansões descontinuadas');addLog(saved.state,'O escritório voltou a um único mapa. Os andares e o elevador foram reembolsados; equipe e móveis foram preservados.');}
       delete saved.state.office.building;saved.state.officePosition={x:0,y:0};
     }
+    if(saved.state.office.layoutRevision !== 2)migrateFloorPlacement(saved.state.office);
     // Never start advancing a restored company before the player presses play.
     if (saved.state.workSession === undefined) saved.state.workSession = null;
     if (saved.state.management === undefined) saved.state.management = createManagement();

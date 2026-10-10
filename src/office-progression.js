@@ -61,7 +61,7 @@ export function createOffice(state, migrated = false) {
     amenities: { lounge: false, floor: false, decor: false, banner: false }, banner: { text: state.profile.company.slice(0, 40), color: '#63866a' },
     nextMaintenanceDay: state.day + 28, bannerProgress: 0, ceoIsolation: 0, salesActivityHours: 0,
     actions: Object.fromEntries(ROOM_ACTIONS.map(({ id }) => [id, 0])),
-    bonuses: { alignmentUntil: 0, presentationUntil: 0, onboardingUntil: 0, focusDay: 0 }, migrated,
+    bonuses: { alignmentUntil: 0, presentationUntil: 0, onboardingUntil: 0, focusDay: 0 }, migrated, layoutRevision: 2,
   };
   if (migrated) {
     const staffPosts = Math.max(state.employees.length, hasOldFurniture(state, 'desk') ? 4 : 2);
@@ -215,7 +215,7 @@ export function getRoomActionEligibility(state, action) {
 export function validOffice(state) {
   const office = state.office;
   const integer = (value, min, max = 100000000) => Number.isInteger(value) && value >= min && value <= max;
-  if (!office || !validPlacement(office.placement) || !OFFICE_STAGES.some((stage) => stage.id === office.stage) || typeof office.migrated !== 'boolean') return false;
+  if (!office || !validPlacement(office.placement) || !OFFICE_STAGES.some((stage) => stage.id === office.stage) || typeof office.migrated !== 'boolean' || (office.layoutRevision !== undefined && office.layoutRevision !== 2)) return false;
   if (!Array.isArray(office.workstations) || !office.workstations.length || office.workstations.length > 21) return false;
   const posts = office.workstations;
   if (!posts.every((post) => post && /^post-\d+$/.test(post.id) && typeof post.desk === 'boolean' && post.desk && typeof post.chair === 'boolean' && integer(post.computerLevel, 1, 3) && (post.employeeId === null || post.employeeId === 'founder' || [...state.employees, ...(state.management?.managers || [])].some((person) => person.id === post.employeeId)) && (post.employeeId === null || readyPost(post)))) return false;

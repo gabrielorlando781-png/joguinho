@@ -13,6 +13,11 @@ const station = (action, x, y, labelX, labelY, bounds, range = 39) => ({
 });
 const table = (x, y, w, kind) => ({ x, y, w, h: 62, kind });
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const FLOOR_MANAGER_POSTS = {
+  sales: { x: 1440, y: 270, w: 110 },
+  finance: { x: 1820, y: 435, w: 110 },
+  hr: { x: 1440, y: 1170, w: 110 },
+};
 
 // Authored starting plans; the placement editor can reposition their owned objects.
 const MAPS = {
@@ -80,14 +85,14 @@ const MAPS = {
   },
   floor: {
     name:'ANDAR INTEIRO',subtitle:'',
-    floor:{x:65,y:181,w:1700,h:980},walk:{x:85,y:201,w:1660,h:940},spawn:{x:1050,y:690},
-    sectors:{development:{x:96,y:202,w:775,h:438,door:'bottom',doorSize:120},sales:{x:890,y:202,w:390,h:340,door:'bottom',doorSize:120},finance:{x:1300,y:202,w:440,h:340,door:'bottom',doorSize:120},hr:{x:880,y:765,w:285,h:320,door:'top',doorSize:120}},
-    posts:Array.from({length:21},(_,i)=>({x:116+(i%7)*104,y:237+Math.floor(i/7)*130,w:90})),
-    tables:{sales:table(1020,320,150,'sales'),finance:table(1440,320,150,'finance'),team:table(974,830,100,'team'),furniture:table(1210,790,126,'furniture'),product:table(1210,950,156,'product'),reception:table(944,574,122,'reception')},
-    coffee:{x:108,y:800},lounge:{x:266,y:818,w:140,h:66},board:{x:930,y:103},
-    meeting:{x:425,y:760,w:340,h:325,door:'right',doorSize:120,table:table(495,820,200,'meeting'),station:station('meeting',595,928,595,750,{x:489,y:790,w:212,h:108})},
-    ceo:{x:1420,y:765,w:310,h:320,door:'top',doorSize:120,table:table(1518,830,110,'ceo'),station:station('ceo',1573,935,1573,750,{x:1510,y:800,w:126,h:112})},
-    stations:[station('work',161,325,161,206,{x:108,y:205,w:106,h:128}),station('board',998,228,998,89,{x:930,y:103,w:140,h:87}),station('sales',1095,425,1095,190,{x:1014,y:291,w:162,h:108}),station('finance',1520,425,1520,190,{x:1430,y:291,w:170,h:108}),station('team',1024,935,1024,750,{x:967,y:800,w:114,h:108}),station('furniture',1273,895,1273,758,{x:1204,y:761,w:140,h:108}),station('product',1288,1055,1288,918,{x:1204,y:921,w:170,h:108}),station('coffee',159,913,149,772,{x:104,y:753,w:88,h:149}),station('rest',336,916,336,791,{x:260,y:792,w:152,h:108}),station('reception',1005,670,1005,547,{x:938,y:547,w:134,h:86}),station('exit',1728,690,1728,645,{x:1712,y:660,w:32,h:47})],
+    floor:{x:65,y:181,w:2180,h:1320},walk:{x:85,y:201,w:2140,h:1280},spawn:{x:1300,y:760},
+    sectors:{development:{x:96,y:202,w:1030,h:650,door:'bottom',doorSize:160},sales:{x:1150,y:202,w:455,h:470,door:'bottom',doorSize:140},finance:{x:1630,y:202,w:580,h:470,door:'bottom',doorSize:150},hr:{x:1190,y:1050,w:420,h:400,door:'top',doorSize:130}},
+    posts:Array.from({length:21},(_,i)=>({x:120+(i%7)*140,y:245+Math.floor(i/7)*190,w:110})),
+    tables:{sales:table(1235,340,170,'sales'),finance:table(1780,340,180,'finance'),team:table(1240,1120,120,'team'),furniture:table(1500,850,126,'furniture'),product:table(1645,1180,156,'product'),reception:table(1220,790,122,'reception')},
+    coffee:{x:120,y:1080},lounge:{x:295,y:1120,w:140,h:66},board:{x:1160,y:103},
+    meeting:{x:435,y:1000,w:470,h:450,door:'right',doorSize:150,table:table(560,1080,220,'meeting'),station:station('meeting',670,1260,670,990,{x:550,y:1050,w:230,h:120})},
+    ceo:{x:1820,y:1040,w:390,h:410,door:'top',doorSize:145,table:table(1950,1130,110,'ceo'),station:station('ceo',2005,1260,2005,1025,{x:1940,y:1100,w:130,h:120})},
+    stations:[station('work',175,350,175,206,{x:112,y:205,w:120,h:135}),station('board',1228,228,1228,89,{x:1160,y:103,w:140,h:87}),station('sales',1320,445,1320,190,{x:1229,y:311,w:182,h:108}),station('finance',1920,415,1920,190,{x:1820,y:291,w:200,h:108}),station('team',1300,1225,1300,1035,{x:1233,y:1090,w:134,h:110}),station('furniture',1563,955,1563,820,{x:1494,y:821,w:140,h:108}),station('product',1723,1285,1723,1145,{x:1639,y:1151,w:170,h:108}),station('coffee',171,1190,161,1052,{x:116,y:1033,w:88,h:149}),station('rest',365,1215,365,1093,{x:290,y:1092,w:152,h:108}),station('reception',1281,885,1281,765,{x:1214,y:763,w:134,h:108}),station('exit',2185,795,2185,750,{x:2169,y:765,w:32,h:47})],
   },
 };
 
@@ -106,6 +111,10 @@ export function createOfficeLayout(office = {}) {
     bounds: { ...layout.financeBoard }, range: 38,
   });
   layout.posts = layout.posts.slice(0, Array.isArray(office.workstations) ? office.workstations.length : 1);
+  if (layout.stage === 'floor') layout.posts.forEach((post, index) => {
+    const area = office.workstations?.[index]?.employeeId?.startsWith('manager:') ? office.workstations[index].employeeId.slice(8) : null;
+    if (FLOOR_MANAGER_POSTS[area]) Object.assign(post, FLOOR_MANAGER_POSTS[area]);
+  });
   layout.rooms = Object.entries(layout.sectors).map(([sector, bounds]) => ({ ...bounds, sector, level: office.rooms?.[sector] || 'open', baseEnclosed: sector === 'finance' }));
   for (const key of ['meeting', 'ceo']) {
     if (office.special?.[key] && layout[key]) {
@@ -115,10 +124,10 @@ export function createOfficeLayout(office = {}) {
     }
   }
   if (office.special?.meeting && layout.stage !== 'garage') {
-    layout.lounge = layout.stage === 'floor' ? { x: 266, y: 818, w: 140, h: 66 } : { x: 164, y: 699, w: 104, h: 37 };
+    layout.lounge = layout.stage === 'floor' ? { x: 295, y: 1120, w: 140, h: 66 } : { x: 164, y: 699, w: 104, h: 37 };
     const rest = layout.stations.find((item) => item.action === 'rest');
     Object.assign(rest, layout.stage === 'floor'
-      ? { x: 336, y: 916, labelX: 336, labelY: 791, bounds: { x: 260, y: 792, w: 152, h: 108 } }
+      ? { x: 365, y: 1215, labelX: 365, labelY: 1093, bounds: { x: 290, y: 1092, w: 152, h: 108 } }
       : { x: 217, y: 747, labelX: 217, labelY: 718, bounds: { x: 158, y: 688, w: 114, h: 49 } });
   }
   return applyPlacement(layout,office);

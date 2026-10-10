@@ -152,7 +152,7 @@ Desenvolvimento, Comercial, RH e Financeiro evoluem de forma independente:
 
 O custo de construção é pago a cada avanço de nível. Cada nível substitui a ocupação e os custos contínuos do anterior. Divisórias dependem do progresso do setor; salas dedicadas exigem endereço comercial e salas de vidro exigem andar inteiro, quatro entregas e reputação 25.
 
-O Comercial melhora a chance de fechar propostas; Desenvolvimento reduz bugs e melhora a qualidade; RH melhora a avaliação e a produtividade das novas contratações; Financeiro reduz atrasos de pagamentos. Ruído tira capacidade de desenvolvimento e eleva o estresse. Sinergia ajuda revisões e previne bloqueios. As paredes e portas aparecem no mapa; o vidro fica transparente.
+O Comercial melhora a chance de fechar propostas; Desenvolvimento reduz bugs e melhora a qualidade; RH melhora a avaliação e a produtividade das novas contratações; Financeiro reduz atrasos de pagamentos. Ruído tira capacidade de desenvolvimento e eleva o estresse. Sinergia ajuda revisões e previne bloqueios. Salas dedicadas e de vidro mantêm entradas abertas, sem portas.
 
 ### Salas especiais
 
@@ -172,21 +172,21 @@ Abra **Configurações → Organizar escritório**, o botão **Editar layout** n
 
 - Selecione um móvel ou setor na lista e arraste diretamente no cenário. Computadores e cadeiras acompanham a mesa; mover o setor leva seus elementos junto.
 - A grade é opcional. Desative **Encaixar na grade** para posicionar por unidade, ou ajuste X/Y; setas fazem ajustes finos e Shift + seta move dez unidades.
-- A orientação da porta pode ser norte, sul, leste ou oeste. Quadros, copa, sofá, plantas e banner comprados também podem ser reposicionados.
+- A abertura de entrada pode ficar ao norte, sul, leste ou oeste. Quadros, copa, sofá, plantas e banner comprados também podem ser reposicionados.
 - **Desfazer**, **Refazer** e **Cancelar** mantêm a edição reversível. **Aplicar layout** salva; não há cobrança para reorganizar. Móveis sobrepostos, fora da sala ou que impeçam acesso aos setores não podem ser aplicados.
 - Cada estágio guarda sua planta. Compras posteriores usam suas posições iniciais e podem ser organizadas pelo mesmo editor.
 
-Funcionários contratados levantam, caminham por rotas que respeitam mesas e paredes, visitam copa, descanso e RH e retornam aos postos. Pausar o tempo ou abrir uma consulta interrompe a circulação normal; gerentes chamados ao CEO continuam o trajeto para que a reunião aconteça. Esse movimento não gasta horas nem caixa do fundador. Portas de salas fechadas e de vidro abrem por aproximação e fecham depois da passagem de pessoas.
+O andar inteiro agora tem uma planta de 2.180 × 1.320 unidades. A sala de Desenvolvimento foi ampliada e os postos ficaram mais espaçados para permitir circulação entre as mesas. Funcionários contratados levantam, caminham por rotas que respeitam mesas e paredes, visitam copa, descanso e RH e retornam aos postos. Pausar o tempo ou abrir uma consulta interrompe a circulação normal; gerentes chamados ao CEO continuam o trajeto para que a conversa aconteça. Esse movimento não gasta horas nem caixa do fundador. As entradas das salas permanecem abertas.
 
 O Comercial agora recebe mais modelos de proposta, com até dez contatos em aberto; a capacidade de projetos ativos cresce conforme a equipe aumenta. O RH mantém quatro candidatos disponíveis e renova a seleção semanalmente, permitindo preencher os postos de um escritório maior. A avaliação de carreira considera produção recente, experiência, tempo no cargo, moral e estresse. Cada promoção aumenta salário e produtividade; quem alcança liderança participa das reuniões. Colegas próximos trocam falas em caixas pixel durante o expediente. Ao abordá-los, as respostas usam os projetos, prazos e indicadores da partida.
 
-Os quatro gerentes têm responsabilidades diferentes: Comercial prospecta e qualifica contatos, Desenvolvimento distribui trabalho e apresenta riscos ou imprevistos, Financeiro acompanha recebíveis e fôlego de caixa, e RH entrevista candidatos e acompanha moral e estresse. Eles não fecham contratos, tomam empréstimos nem contratam pessoas sem sua autorização. Salários e encargos aparecem no Financeiro; mais delegação melhora a rotina, mas também aumenta o custo fixo. As decisões aguardam na fila até você recebê-los na sala do CEO, um por vez. Relatórios podem ser consultados diretamente ao abordar o gerente.
+Os quatro gerentes têm responsabilidades diferentes: Comercial prospecta e qualifica contatos, Desenvolvimento distribui trabalho e apresenta riscos ou imprevistos, Financeiro acompanha recebíveis e fôlego de caixa, e RH entrevista candidatos e acompanha moral e estresse. Cada gerente tem seu posto no próprio setor e volta para lá depois de consultar o CEO ou participar de uma reunião. Eles não fecham contratos, tomam empréstimos nem contratam pessoas sem sua autorização. Salários e encargos aparecem no Financeiro; mais delegação melhora a rotina, mas também aumenta o custo fixo. As decisões aguardam na fila até você recebê-los na sala do CEO, um por vez. Relatórios podem ser consultados diretamente ao abordar o gerente.
 
 O experimento de cômodos em mapas separados, andares e elevador foi retirado. Ao carregar um save daquela versão, os valores dessas expansões são devolvidos uma vez, preservando móveis, funcionários, contratos e dados financeiros. O escritório volta a ser um mapa único.
 
 ## Salvamento
 
-O progresso fica no `localStorage` deste navegador. Empresa, perfil, equipe, projetos, mobília, financeiro, posição do personagem e sessões de puzzles são salvos automaticamente. Recarregar restaura a partida com o tempo pausado. Jogos das versões 1 e 2 são migrados preservando o progresso. O escritório antigo vira uma sala aberta no menor endereço capaz de acomodar todos os postos e melhorias existentes. A primeira manutenção é agendada para 28 dias após a migração, sem cobrança retroativa.
+O progresso fica no `localStorage` deste navegador. Empresa, perfil, equipe, projetos, mobília, financeiro, posição do personagem e sessões de puzzles são salvos automaticamente. Recarregar restaura a partida com o tempo pausado. Jogos das versões 1 e 2 são migrados preservando o progresso. O escritório antigo vira uma sala aberta no menor endereço capaz de acomodar todos os postos e melhorias existentes. Plantas editadas do andar anterior são ajustadas ao mapa maior, preservando o posicionamento relativo dos elementos. A primeira manutenção é agendada para 28 dias após a migração, sem cobrança retroativa.
 
 Limpar os dados do navegador apaga a partida. Não há conta, sincronização entre dispositivos ou salvamento no servidor. Você pode começar outra história pelo **Diário → Guia & identidade**, com confirmação antes de substituir a empresa.
 
@@ -215,7 +215,7 @@ npm run test:browser
 
 Para verificar apenas o navegador e as compras da loja: `GAME_BROWSER_SUITE=shop npm run test:browser`.
 
-A suíte Node cobre 110 cenários de negócio, orçamento de horas, puzzles, senha do PC, comandos do terminal, imprevistos, crédito, produto, progressão do escritório, efeitos das salas, manutenção e migração dos saves. O teste de navegador usa Python Playwright e Chromium, disponíveis nesta imagem de nuvem. Ele inicia seu próprio servidor Vite em uma porta livre, usa contextos isolados e percorre os setores com o personagem, verificando contratos, equipe, entregas, recebimentos, compras, ampliações, salas, ações especiais, senha e recuperação do PC, comandos digitados, janelas, salvamento, migração e layout móvel. Encerra apenas o servidor que iniciou. `GAME_TEST_ARTIFACTS` permite escolher a pasta das capturas. `GAME_BROWSER_SUITE=experience npm run test:browser` verifica o novo editor, funcionários e portas em desktop.
+A suíte Node cobre cenários de negócio, orçamento de horas, puzzles, senha do PC, comandos do terminal, imprevistos, crédito, produto, progressão do escritório, efeitos das salas, manutenção e migração dos saves. O teste de navegador usa Python Playwright e Chromium, disponíveis nesta imagem de nuvem. Ele inicia seu próprio servidor Vite em uma porta livre, usa contextos isolados e percorre os setores com o personagem, verificando contratos, equipe, entregas, recebimentos, compras, ampliações, salas, ações especiais, senha e recuperação do PC, comandos digitados, janelas, salvamento e migração. Encerra apenas o servidor que iniciou. `GAME_TEST_ARTIFACTS` permite escolher a pasta das capturas. `GAME_BROWSER_SUITE=experience npm run test:browser` verifica o editor, funcionários e entradas abertas em desktop.
 
 ## Estrutura
 
@@ -228,7 +228,7 @@ A suíte Node cobre 110 cenários de negócio, orçamento de horas, puzzles, sen
 | `src/office-placement.js` | Elementos editáveis, deslocamento de setores e validação do save |
 | `src/office-navigation.js` | Colisões e verificação de acesso da planta |
 | `src/layout-editor-ui.js` | Controles de organização, coordenadas e histórico |
-| `src/staff-motion.js` | Rotinas de circulação dos funcionários e animação das portas |
+| `src/staff-motion.js` | Rotinas de circulação dos funcionários, gerentes e reuniões |
 | `src/office-progression.js` | Catálogo, requisitos, ocupação, custos e efeitos do escritório |
 | `src/store-ui.js` | Loja contextual com custos, vagas, salas e identidade |
 | `src/computer-ui.js` | Área de trabalho, aplicativos e interface dos puzzles |

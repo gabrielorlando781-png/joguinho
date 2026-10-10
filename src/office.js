@@ -1,6 +1,6 @@
 import { describeLayout, movePlacement } from './office-placement.js';
 import { layoutObstacles } from './office-navigation.js';
-import { syncStaff, updateStaff, createRoomDoors, updateDoors } from './staff-motion.js';
+import { syncStaff, updateStaff } from './staff-motion.js';
 import { createOfficeLayout, roomWalls } from './office-layouts.js';
 import { getFinanceOverview } from './finance-model.js';
 
@@ -36,7 +36,6 @@ export class OfficeScene {
     this.zoom = 1;
     this.destroyed = false;
     this.staff = new Map();
-    this.doors = [];
     this.editor = null;
     this.geometryKey = '';
     this.obstacles = this.buildObstacles();
@@ -78,7 +77,7 @@ export class OfficeScene {
     this.state = state;
     this.financeSnapshot = getFinanceOverview(state);
     const office = state.office || {};
-    const key = JSON.stringify([office.placement,office.stage, office.rooms, office.special, office.amenities, office.workstations?.map((post) => [post.desk, post.chair]), office.banner]);
+    const key = JSON.stringify([office.placement,office.stage, office.rooms, office.special, office.amenities, office.workstations?.map((post) => [post.desk, post.chair, post.employeeId]), office.banner]);
     const changed = key !== this.geometryKey;
     if (changed) {
       this.geometryKey = key;
@@ -106,7 +105,7 @@ export class OfficeScene {
       this.travelAccumulator = 0;
       this.onMove({ x: this.player.x, y: this.player.y, distance: 0, station: this.nearestHotspot()?.action || null });
     }
-    syncStaff(this);this.doors=createRoomDoors(this.layout,this.doors);
+    syncStaff(this);
     if (changed) this.resize();
     else this.updateCamera();
   }
@@ -316,7 +315,7 @@ export class OfficeScene {
     this.update(dt);this.updateCamera();this.draw();this.raf=requestAnimationFrame(this.frame);
   }
   update(dt) {
-    updateStaff(this,dt);updateDoors(this,dt);
+    updateStaff(this,dt);
     this.moveReportElapsed+=dt;
     if(this.blockedInput()) {this.keys.clear();this.player.moving=false;this.reportMovement(true);return;}
     if(this.pendingAction?.startsWith('person:')||this.pendingAction?.startsWith('manager:')){
@@ -788,7 +787,6 @@ export class OfficeScene {
       this.rect(c,floor.x+214,floor.y-78,43,37,'#ba9469');this.rect(c,floor.x+218,floor.y-74,35,29,'#afc9a1');this.polygon(c,[[floor.x+222,floor.y-49],[floor.x+232,floor.y-63],[floor.x+248,floor.y-49]],'#739373');
     }
     for(const npc of this.staff?.values()||[])props.push({y:npc.y,draw:()=>{this.drawCharacter(c,npc,npc.employee.color);this.text(c,npc.employee.name.toUpperCase(),npc.x,npc.y-59,8,'#f3ead0','center',700);if(npc.meetingLocation==='inside')this.text(c,'REUNIÃO',npc.x,npc.y-71,7,'#e5c988','center',700);else if(npc.managerLocation==='outside')this.text(c,'AGUARDANDO',npc.x,npc.y-70,7,'#e5c988','center',700);else if(npc.phase==='break'&&!npc.employee.area)this.text(c,npc.activity,npc.x,npc.y-72,7,'#f3ead0','center',600);}});
-    for(const door of this.doors||[])props.push({y:door.center.y+6,draw:()=>this.drawAnimatedDoor(c,door)});
     props.push({y:this.player.y,draw:()=>this.drawCharacter(c,this.player,this.state.profile?.avatarColor||'#e3a46b',true)});
     props.sort((a,b)=>a.y-b.y).forEach(prop=>prop.draw());
     this.drawWorldData(c);
@@ -820,15 +818,8 @@ export class OfficeScene {
     c.font='bold 9px monospace';c.textAlign='left';c.textBaseline='alphabetic';c.fillStyle='#e6c887';c.fillText(speaker.employee.name.toUpperCase(),x+10,y+15);
     c.font='11px monospace';c.fillStyle='#f7efdb';visible.forEach((row,index)=>c.fillText(row,x+10,y+31+index*15));
   }
-  drawAnimatedDoor(c,d){
-    const angle=(d.horizontal?0:Math.PI/2)+(d.side==='bottom'||d.side==='left'?-1:1)*d.progress*Math.PI/2;
-    const ex=d.x+Math.cos(angle)*d.size,ey=d.y+Math.sin(angle)*d.size;
-    this.polygon(c,[[d.x,d.y],[ex,ey],[ex,ey-24],[d.x,d.y-24]],d.glass?'#b3d8caac':'#a58054');
-    c.strokeStyle=d.glass?'#66998f':'#6e583d';c.lineWidth=3;c.beginPath();c.moveTo(d.x,d.y-24);c.lineTo(ex,ey-24);c.lineTo(ex,ey);c.lineTo(d.x,d.y);c.stroke();
-    this.ellipse(c,d.x+(ex-d.x)*.82,d.y+(ey-d.y)*.82-11,2.2,2.2,'#e7d399');
-  }
   setEditor(editor){this.cancelRoute();this.keys.clear();this.player.moving=false;this.editor=editor;if(editor)this.previewEditor();else {this.geometryKey='';this.setState(this.state);}this.resize();}
-  previewEditor(){const office={...this.state.office,placement:{version:1,stages:{...(this.state.office.placement?.stages||{}),[this.state.office.stage]:this.editor.items}}};this.layout=createOfficeLayout(office);this.obstacles=layoutObstacles(this.layout,office);this.hotspots=this.layout.stations;this.renderBackground();this.doors=createRoomDoors(this.layout,[]);syncStaff(this);this.resize();}
+  previewEditor(){const office={...this.state.office,placement:{version:1,stages:{...(this.state.office.placement?.stages||{}),[this.state.office.stage]:this.editor.items}}};this.layout=createOfficeLayout(office);this.obstacles=layoutObstacles(this.layout,office);this.hotspots=this.layout.stations;this.renderBackground();syncStaff(this);this.resize();}
   selectEditor(id){if(!this.editor)return;this.editor.selected=id;this.editor.onSelect?.(id);this.draw();}
   startEditorDrag(e){const point=this.pointerPosition(e),objects=describeLayout(this.layout,this.state.office);const selected=objects.find(o=>o.id===this.editor.selected);const contains=o=>point.x>=o.x&&point.x<=o.x+o.w&&point.y>=o.y-25&&point.y<=o.y+o.h;const target=selected&&contains(selected)?selected:objects.filter(contains).sort((a,b)=>Number(a.group)-Number(b.group)||a.w*a.h-b.w*b.h)[0];if(!target)return;this.selectEditor(target.id);this.editor.drag={id:target.id,dx:point.x-target.x,dy:point.y-target.y};this.canvas.setPointerCapture(e.pointerId);}
   dragEditor(e){if(!this.editor.drag)return;const p=this.pointerPosition(e),d=this.editor.drag,grid=this.editor.snap?8:1;this.changeEditorObject(d.id,Math.round((p.x-d.dx)/grid)*grid,Math.round((p.y-d.dy)/grid)*grid,false);}

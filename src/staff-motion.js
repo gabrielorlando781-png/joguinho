@@ -58,18 +58,19 @@ export function updateStaff(scene,dt){
         if(npc.managerTarget!==tag){npc.managerTarget=tag;npc.path=scene.findPath(npc,target)||[];npc.wait=0;}
         if(distance(npc,target)<9){
           npc.path=[];npc.managerLocation=inside?'inside':'outside';
-          if(leaving)scene.ceoLeaving=null;
+          if(leaving){scene.ceoLeaving=null;npc.returningToArea=true;npc.managerTarget=null;npc.phase='returning';npc.path=scene.findPath(npc,npc.home)||[];}
           if(inside&&!npc.arrivalNotified){npc.arrivalNotified=true;scene.onManagerArrival?.(manager);}
         }else{npc.managerLocation='walking';npc.arrivalNotified=false;}
       }
     }else {
       if(npc.meetingTarget){npc.meetingTarget=null;npc.meetingLocation=null;npc.path=[];}
       if(manager){npc.managerTarget=null;npc.managerLocation='working';npc.arrivalNotified=false;}
+      if(npc.returningToArea&&!npc.path.length&&distance(npc,npc.home)>=9)npc.path=scene.findPath(npc,npc.home)||[];
     }
-    if(!active&&queueIndex<0&&!(manager&&scene.ceoLeaving===manager)&&meetingIndex<0&&!meetingLeaving)continue;
+    if(!active&&queueIndex<0&&!(manager&&scene.ceoLeaving===manager)&&meetingIndex<0&&!meetingLeaving&&!npc.returningToArea)continue;
     if(npc.path.length){
       while(npc.path.length&&distance(npc,npc.path[0])<.1)npc.path.shift();
-      if(!npc.path.length){npc.seated=queueIndex<0&&npc.phase==='returning';npc.phase=npc.seated?'working':'break';npc.timer=npc.seated?14+npc.cycle%7:4+npc.cycle%4;continue;}
+      if(!npc.path.length){npc.seated=queueIndex<0&&npc.phase==='returning';if(npc.seated)npc.returningToArea=false;npc.phase=npc.seated?'working':'break';npc.timer=npc.seated?14+npc.cycle%7:4+npc.cycle%4;continue;}
       const target=npc.path[0],d=distance(npc,target),step=Math.min(d,dt*(105+npc.cycle%3*8)),dx=(target.x-npc.x)/d*step,dy=(target.y-npc.y)/d*step,next={x:npc.x+dx,y:npc.y+dy};
       const people=[scene.player,...scene.staff.values()].filter(p=>p!==npc&&!p.seated&&!(meetingIndex>=0&&meeting?.attendees.includes(p.employee?.id)));
       const personalSpace=meetingIndex>=0||meetingLeaving?10:19;
@@ -77,6 +78,7 @@ export function updateStaff(scene,dt){
       npc.wait=0;npc.x=next.x;npc.y=next.y;npc.facing=Math.abs(dx)>Math.abs(dy)?dx>0?'right':'left':dy>0?'down':'up';npc.moving=true;npc.step+=dt*9;continue;
     }
     if(meetingIndex>=0||meetingLeaving||queueIndex>=0||(manager&&scene.ceoLeaving===manager))continue;
+    if(npc.returningToArea){if(distance(npc,npc.home)<9){npc.returningToArea=false;npc.seated=true;npc.phase='working';}continue;}
     if(!active)continue;
     npc.timer-=dt;if(npc.timer>0)continue;
     let target;
@@ -113,15 +115,4 @@ function updateAmbientConversation(scene,dt,active){
   const pair=pairs[(scene.ambientCycle||0)%pairs.length];
   scene.ambientCycle=(scene.ambientCycle||0)+1;
   scene.ambientConversation={lines:staffExchange(scene.state,pair[0].employee,pair[1].employee),elapsed:0};
-}
-export function createRoomDoors(layout,previous=[]){
-  return layout.rooms.filter(r=>(r.level==='dedicated'||r.level==='glass'||r.baseEnclosed)&&r.level!=='partition').map(r=>{
-    const horizontal=['top','bottom'].includes(r.door),size=r.doorSize||96;
-    const x=horizontal?r.x+(r.w-size)/2:r.door==='right'?r.x+r.w-3:r.x+3,y=horizontal?(r.door==='bottom'?r.y+r.h-3:r.y+3):r.y+(r.h-size)/2;
-    const old=previous.find(d=>d.id===r.sector&&d.x===x&&d.y===y);
-    return {id:r.sector,x,y,size,horizontal,side:r.door,glass:r.level==='glass',center:{x:horizontal?x+size/2:x,y:horizontal?y:y+size/2},progress:old?.progress||0,hold:old?.hold||0};
-  });
-}
-export function updateDoors(scene,dt){
-  for(const door of scene.doors||[]){const close=[scene.player,...scene.staff?.values()||[]].some(p=>distance(p,door.center)<78);if(close)door.hold=1.15;else door.hold=Math.max(0,door.hold-dt);const target=door.hold>0?1:0;door.progress=Math.max(0,Math.min(1,door.progress+(target>door.progress?1:-1)*dt*3.4));}
 }

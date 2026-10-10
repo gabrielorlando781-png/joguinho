@@ -1,4 +1,22 @@
 const LABELS={development:'Desenvolvimento',sales:'Comercial',finance:'Financeiro',hr:'RH',meeting:'Reuniões',ceo:'CEO',team:'Mesa do RH',furniture:'Mesa da loja',product:'Laboratório',reception:'Diário',financeAccounts:'Contas a pagar'};
+const FLOOR_OFFSET={
+  'room:development':[0,0],'room:sales':[260,0],'room:finance':[330,0],'room:hr':[310,285],
+  'room:meeting':[10,240],'room:ceo':[400,275],
+  'table:sales':[215,20],'table:finance':[330,0],'table:financeAccounts':[400,0],
+  'table:team':[266,290],'table:furniture':[290,60],'table:product':[435,230],
+  'table:reception':[276,216],'table:meeting':[65,260],'table:ceo':[432,300],
+  board:[230,0],'finance-board':[330,0],coffee:[12,280],lounge:[29,302],
+  'decor:plant-1':[0,340],'decor:plant-2':[480,340],banner:[480,0],
+};
+export function migrateFloorPlacement(office){
+  const floor=office.placement?.stages?.floor;
+  if(floor)for(const [id,position] of Object.entries(floor)){
+    const index=id.startsWith('post:')?office.workstations.findIndex(post=>`post:${post.id}`===id):-1;
+    const offset=index>=0?[4+(index%7)*36,8+Math.floor(index/7)*60]:FLOOR_OFFSET[id];
+    if(offset){position.x+=offset[0];position.y+=offset[1];}
+  }
+  office.layoutRevision=2;
+}
 export function validPlacement(value){
   if(value===undefined)return true;
   return Boolean(value&&value.version===1&&value.stages&&typeof value.stages==='object'&&!Array.isArray(value.stages)&&Object.entries(value.stages).every(([stage,items])=>['garage','commercial','floor'].includes(stage)&&items&&typeof items==='object'&&!Array.isArray(items)&&Object.keys(items).length<=80&&Object.entries(items).every(([id,p])=>/^(room:(development|sales|finance|hr|meeting|ceo)|post:post-\d+|table:(sales|finance|financeAccounts|team|furniture|product|reception|meeting|ceo)|board|finance-board|coffee|lounge|decor:plant-[12]|banner)$/.test(id)&&p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.x>=0&&p.y>=0&&p.x<=4000&&p.y<=4000&&(p.door===undefined||['top','right','bottom','left'].includes(p.door)))));
@@ -6,7 +24,7 @@ export function validPlacement(value){
 export function describeLayout(layout,office){
   return [
     ...layout.rooms.map(r=>({id:`room:${r.sector}`,name:`Setor: ${LABELS[r.sector]}`,x:r.x,y:r.y,w:r.w,h:r.h,door:r.door,group:true})),
-    ...layout.posts.map((r,i)=>({id:`post:${office.workstations[i].id}`,name:office.workstations[i].employeeId==='founder'?'Meu computador':`Posto ${i+1}`,x:r.x,y:r.y,w:r.w,h:88})),
+    ...layout.posts.map((r,i)=>({id:`post:${office.workstations[i].id}`,name:office.workstations[i].employeeId==='founder'?'Meu computador':office.workstations[i].employeeId?.startsWith('manager:')?`Posto do gerente · ${LABELS[postSector(office,i)]}`:`Posto ${i+1}`,x:r.x,y:r.y,w:r.w,h:88})),
     ...Object.entries(layout.tables).map(([id,r])=>({id:`table:${id}`,name:LABELS[id]||id,...r})),
     {id:'board',name:'Quadro de projetos',...layout.board,w:140,h:87},
     {id:'finance-board',name:'Quadro financeiro',...layout.financeBoard},
@@ -18,6 +36,7 @@ export function describeLayout(layout,office){
 }
 const FAMILY={development:['work'],sales:['sales'],finance:['finance'],hr:['team'],meeting:['meeting'],ceo:['ceo']};
 const FAMILY_TABLES={sales:['sales'],finance:['finance','financeAccounts'],hr:['team'],meeting:['meeting'],ceo:['ceo']};
+const postSector=(office,index)=>office.workstations?.[index]?.employeeId?.startsWith('manager:')?office.workstations[index].employeeId.slice(8):'development';
 function shift(o,dx,dy){o.x+=dx;o.y+=dy;}
 function shiftStation(layout,action,dx,dy){const s=layout.stations.find(s=>s.action===action);if(!s)return;shift(s,dx,dy);s.labelX+=dx;s.labelY+=dy;shift(s.bounds,dx,dy);}
 export function applyPlacement(layout,office){
@@ -27,9 +46,10 @@ export function applyPlacement(layout,office){
   for(const room of layout.rooms){const p=items[`room:${room.sector}`];if(!p)continue;const dx=p.x-room.x,dy=p.y-room.y;shift(room,dx,dy);room.door=p.door||room.door;
     for(const action of FAMILY[room.sector]||[])shiftStation(layout,action,dx,dy);
     for(const name of FAMILY_TABLES[room.sector]||[])if(layout.tables[name])shift(layout.tables[name],dx,dy);
-    if(room.sector==='development')layout.posts.forEach(o=>shift(o,dx,dy));
+    layout.posts.forEach((o,index)=>{if(postSector(office,index)===room.sector)shift(o,dx,dy);});
     if(room.sector==='finance')shift(layout.financeBoard,dx,dy);
   }
+  const managerDefaults=new Map(layout.posts.map((post,index)=>[index,{...post}]));
   for(const [id,p] of Object.entries(items)){
     if(id.startsWith('room:'))continue;
     if(id.startsWith('post:')){const i=office.workstations.findIndex(s=>s.id===id.slice(5)),o=layout.posts[i];if(!o)continue;const dx=p.x-o.x,dy=p.y-o.y;shift(o,dx,dy);if(office.workstations[i].employeeId==='founder')shiftStation(layout,'work',dx,dy);}
@@ -38,6 +58,14 @@ export function applyPlacement(layout,office){
     else if(id==='banner')Object.assign(layout.banner,p);
     else {const key=id==='finance-board'?'financeBoard':id,o=layout[key];if(!o)continue;const dx=p.x-o.x,dy=p.y-o.y;shift(o,dx,dy);shiftStation(layout,{board:'board','finance-board':'finance',coffee:'coffee',lounge:'rest'}[id],dx,dy);}
   }
+  // A manager's paid workstation stays in their own sector. Old edited saves
+  // with desks in the common development room are gently rehomed here.
+  layout.posts.forEach((post,index)=>{
+    const sector=postSector(office,index);
+    if(sector==='development')return;
+    const room=layout.rooms.find((entry)=>entry.sector===sector),fallback=managerDefaults.get(index);
+    if(room&&fallback&&(post.x<room.x+10||post.y<room.y+10||post.x+post.w>room.x+room.w-10||post.y+88>room.y+room.h-10))Object.assign(post,fallback);
+  });
   // Keep the founder interaction attached to their particular desk, even after a move.
   const i=office.workstations?.findIndex(p=>p.employeeId==='founder')??0,post=layout.posts[Math.max(0,i)],s=layout.stations.find(s=>s.action==='work');
   if(post&&s){s.x=post.x+post.w/2;s.y=post.y+88;s.labelX=post.x+post.w/2;s.labelY=post.y-31;s.bounds={x:post.x-8,y:post.y-38,w:post.w+16,h:126};}
@@ -45,6 +73,6 @@ export function applyPlacement(layout,office){
 }
 export function movePlacement(layout,office,items,id,x,y,door){
   const copy=structuredClone(items),objects=describeLayout(layout,office),selected=objects.find(o=>o.id===id);if(!selected)return copy;
-  if(selected.group){const dx=x-selected.x,dy=y-selected.y,sector=id.slice(5);for(const child of objects.filter(o=>o.id.startsWith('post:')&&sector==='development'||(FAMILY_TABLES[sector]||[]).some(t=>o.id===`table:${t}`)||o.id==='finance-board'&&sector==='finance')){copy[child.id]={x:child.x+dx,y:child.y+dy};}}
+  if(selected.group){const dx=x-selected.x,dy=y-selected.y,sector=id.slice(5);for(const child of objects.filter(o=>o.id.startsWith('post:')&&postSector(office,office.workstations.findIndex(post=>`post:${post.id}`===o.id))===sector||(FAMILY_TABLES[sector]||[]).some(t=>o.id===`table:${t}`)||o.id==='finance-board'&&sector==='finance')){copy[child.id]={x:child.x+dx,y:child.y+dy};}}
   copy[id]={x:Math.round(x),y:Math.round(y),...(selected.group?{door:door||selected.door}: {})};return copy;
 }

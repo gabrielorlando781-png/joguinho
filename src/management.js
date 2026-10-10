@@ -1,6 +1,6 @@
 export const MANAGER_PROFILES = [
   { area: 'sales', name: 'Clara', role: 'Gerente comercial', salary: 4200, color: '#c47e63', station: 'sales' },
-  { area: 'development', name: 'Ravi', role: 'Gerente de desenvolvimento', salary: 5200, color: '#7294b8', station: 'board' },
+  { area: 'development', name: 'Ravi', role: 'Gerente de desenvolvimento', salary: 5200, color: '#7294b8', station: 'work' },
   { area: 'finance', name: 'Lívia', role: 'Gerente financeiro', salary: 4700, color: '#b6a668', station: 'finance' },
   { area: 'hr', name: 'Nina', role: 'Gerente de pessoas', salary: 3900, color: '#a987b6', station: 'team' },
 ];

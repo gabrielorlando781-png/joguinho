@@ -1288,7 +1288,7 @@ def verify_office_experience(browser,url):
     """],cwd=ROOT,text=True))
     context,page=saved_context(browser,url,fixture,{'width':1920,'height':1080})
     assert not company(page)['office'].get('building')
-    assert page.evaluate('window.__testedScene.layout.floor.w')==1700
+    assert page.evaluate('window.__testedScene.layout.floor.w')==2180
     for action in ['work','finance','team','sales','meeting','ceo','furniture','exit']:
         visit(page,action);assert page.evaluate('action=>window.__testedScene.isNearStation(action)',action)
     close_station(page)
@@ -1303,22 +1303,22 @@ def verify_office_experience(browser,url):
         page.locator('[data-edit-select="post:post-2"]').click()
         coords=page.evaluate("""({x,y})=>{const s=window.__testedScene,r=s.canvas.getBoundingClientRect(),post=s.layout.posts[1];return {start:{x:r.left+s.offsetX+(post.x+post.w/2)*s.scale,y:r.top+s.offsetY+(post.y+20)*s.scale},end:{x:r.left+s.offsetX+(x+post.w/2)*s.scale,y:r.top+s.offsetY+(y+20)*s.scale}};}""",{'x':x,'y':y})
         page.mouse.move(coords['start']['x'],coords['start']['y']);page.mouse.down();page.mouse.move(coords['end']['x'],coords['end']['y'],steps=12);page.mouse.up()
-    original=position();open_editor();page.locator('[data-edit-snap]').uncheck();drag_post(860,650)
-    assert position()=={'x':860,'y':650},position()
+    original=position();open_editor();page.locator('[data-edit-snap]').uncheck();drag_post(900,900)
+    assert position()=={'x':900,'y':900},position()
     assert company(page)['office']==before['office'] and company(page)['cash']==before['cash']
     assert page.locator('[data-edit="apply"]').is_enabled()
     page.locator('[data-edit="undo"]').click();assert position()==original
-    page.locator('[data-edit="redo"]').click();assert position()=={'x':860,'y':650}
+    page.locator('[data-edit="redo"]').click();assert position()=={'x':900,'y':900}
     page.screenshot(path=str(ARTIFACTS/'office-free-editor.png'),animations='disabled')
     page.locator('[data-edit="cancel"]').click();assert position()==original;assert company(page)['office']==before['office']
     checks.append('Actual pointer dragging places an owned desk at arbitrary coordinates; undo, redo and cancel preserve company resources and the original geometry')
-    open_editor();page.locator('[data-edit-snap]').uncheck();drag_post(860,650);page.locator('[data-edit="apply"]').click()
-    assert company(page)['office']['placement']['stages']['floor']['post:post-2']=={'x':860,'y':650}
+    open_editor();page.locator('[data-edit-snap]').uncheck();drag_post(900,900);page.locator('[data-edit="apply"]').click()
+    assert company(page)['office']['placement']['stages']['floor']['post:post-2']=={'x':900,'y':900}
     assert company(page)['cash']==before['cash']
-    page.reload(wait_until='networkidle');instrument_scene(page);assert position()=={'x':860,'y':650}
-    open_editor();drag_post(116,237);assert page.locator('[data-edit="apply"]').is_disabled();assert 'sobrepostos' in page.locator('.edit-validation').inner_text();page.keyboard.press('Escape');assert position()=={'x':860,'y':650}
+    page.reload(wait_until='networkidle');instrument_scene(page);assert position()=={'x':900,'y':900}
+    open_editor();drag_post(120,245);assert page.locator('[data-edit="apply"]').is_disabled();assert 'sobrepostos' in page.locator('.edit-validation').inner_text();page.keyboard.press('Escape');assert position()=={'x':900,'y':900}
     checks.append('Applied free furniture positions survive reload; overlapping desks are rejected and cannot overwrite the valid office')
-    open_editor();page.locator('[data-edit-select="post:post-1"]').click();page.locator('[data-edit-coordinate="x"]').fill('1103');page.locator('[data-edit-coordinate="x"]').press('Tab');page.locator('[data-edit-coordinate="y"]').fill('625');page.locator('[data-edit-coordinate="y"]').press('Tab');assert page.locator('[data-edit="apply"]').is_enabled();page.locator('[data-edit="apply"]').click()
+    open_editor();page.locator('[data-edit-select="post:post-1"]').click();page.locator('[data-edit-coordinate="x"]').fill('1120');page.locator('[data-edit-coordinate="x"]').press('Tab');page.locator('[data-edit-coordinate="y"]').fill('900');page.locator('[data-edit-coordinate="y"]').press('Tab');assert page.locator('[data-edit="apply"]').is_enabled();page.locator('[data-edit="apply"]').click()
     visit(page,'work');assert page.evaluate('window.__testedScene.isNearStation("work")');computer_app(page,'expansion');page.locator('[data-edit="open"]').click();assert page.locator('.layout-tools').is_visible();page.locator('[data-edit="cancel"]').click();assert not page.evaluate('window.__testedScene.player.seated')
     checks.append('An arbitrarily relocated founder PC still requires walking, supports its login/apps and opens the same direct editor from the store browser')
     page.locator('[data-action="pause"]').click();assert company(page)['paused'] is False
@@ -1332,11 +1332,10 @@ def verify_office_experience(browser,url):
     page.locator('[data-action="pause"]').click();frozen=page.evaluate('Array.from(window.__testedScene.staff.values()).map(n=>[n.x,n.y])');page.wait_for_timeout(700);assert page.evaluate('Array.from(window.__testedScene.staff.values()).map(n=>[n.x,n.y])')==frozen
     checks.append('Real hired employees leave desks, follow collision-safe walking routes and pause with the clock without consuming founder hours or company cash')
     assert page.evaluate('window.__testedScene.requestInteraction("ceo")')
-    page.wait_for_function('window.__testedScene.doors.find(d=>d.id==="ceo").progress>.9',timeout=20000)
-    page.screenshot(path=str(ARTIFACTS/'office-door-opening.png'),animations='disabled')
     page.locator('#station-panel[data-station="ceo"]').wait_for(state='visible',timeout=20000)
-    page.wait_for_function('window.__testedScene.doors.find(d=>d.id==="ceo").progress===0',timeout=10000)
-    checks.append('The room door visibly swings open on approach and closes after passage; the business screen opens only at the physical desk')
+    page.screenshot(path=str(ARTIFACTS/'office-open-entrance.png'),animations='disabled')
+    assert not page.evaluate('Object.hasOwn(window.__testedScene,"doors")')
+    checks.append('The CEO room has an open passage with no door sprite; the business screen opens only at the physical desk')
     close_station(page);context.close()
     for stage in ['garage','commercial']:
         older=json.loads(subprocess.check_output(['node','--input-type=module','-e',"import {createGame} from './src/simulation.js';const state=createGame();state.office.stage="+json.dumps(stage)+";console.log(JSON.stringify({version:3,state}));"],cwd=ROOT,text=True))
@@ -1356,6 +1355,7 @@ def verify_management(browser,url):
       console.log(JSON.stringify({version:3,state}));
     """],cwd=ROOT,text=True))
     context,page=saved_context(browser,url,fixture,{'width':1920,'height':1080})
+    assert page.evaluate('''() => [...window.__testedScene.staff.values()].every(n => {const r=window.__testedScene.layout.sectors[n.employee.area];return n.x>r.x&&n.x<r.x+r.w&&n.y>r.y&&n.y<r.y+r.h;})''')
     visit(page,'ceo')
     panel=page.locator('#station-panel[data-station="ceo"]')
     assert panel.locator('.manager-visit').count()==1
@@ -1373,10 +1373,22 @@ def verify_management(browser,url):
     checks.append('Managers walk to the CEO office while the panel is open, enter one at a time, wait outside, and leave before the next meeting')
     close_station(page)
     page.wait_for_function('!window.__testedScene.ceoLeaving',timeout=10000)
+    page.wait_for_function('''[...window.__testedScene.staff.values()].every(n => Math.hypot(n.x-n.home.x,n.y-n.home.y)<10)''',timeout=30000)
+    checks.append('Managers return to paid workstations inside their own departments after CEO visits')
     visit(page,'manager:finance')
     page.locator('#station-panel[data-station="manager:finance"] [data-dialogue-topic="report"]').click()
     assert 'Caixa:' in page.locator('#station-panel[data-station="manager:finance"] .pixel-dialogue-log').inner_text()
     checks.append('The founder can approach a manager in the office and ask for a live report')
+    close_station(page)
+    new_manager=page.evaluate('''async () => {
+      const game=await import('/src/simulation.js'),scene=window.__testedScene,state=scene.state;
+      game.purchaseOfficeItem(state,'desk');game.purchaseOfficeItem(state,'chair');scene.setState(state);
+      const before=scene.layout.posts.at(-1).x,hire=game.hireManager(state,'hr');scene.setState(state);
+      const post=scene.layout.posts.at(-1),room=scene.layout.sectors.hr;
+      return {ok:hire.ok,before,after:post.x,inRoom:post.x>room.x&&post.x+post.w<room.x+room.w&&post.y>room.y&&post.y+88<room.y+room.h};
+    }''')
+    assert new_manager['ok'] and new_manager['inRoom'] and new_manager['after']!=new_manager['before']
+    checks.append('Hiring a manager immediately moves the purchased workstation into that manager’s department')
     context.close()
 
 
