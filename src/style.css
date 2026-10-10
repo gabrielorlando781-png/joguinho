@@ -218,6 +218,25 @@ select option { background: #1b2a21; }
 .person-card .stat-grid { margin-top: 15px; margin-bottom: 0; }
 .person-card > .muted { margin: 8px 0 13px; }
 .person-card > .tag { position: absolute; top: 17px; right: 14px; font-size: 9px; }
+.manager-desk { padding: 17px; margin-bottom: 18px; border: 1px solid #b9a97875; border-radius: 10px; background: linear-gradient(145deg, #c6b48b18, #233d3020); }
+.manager-desk .subheading { margin: 5px 0 7px; }
+.manager-visit { margin: 15px 0; padding: 16px; border: 1px solid #b9a97888; border-radius: 9px; background: #172c21; box-shadow: 0 8px 22px #0002; }
+.manager-visit-head { display: flex; align-items: center; gap: 11px; }
+.manager-visit-head div { display: grid; gap: 2px; flex: 1; }
+.manager-visit-head small { color: var(--muted); }
+.manager-visit h4 { margin: 15px 0 6px; font-size: 16px; }
+.manager-visit p { line-height: 1.5; }
+.manager-decision { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+.manager-options { display: grid; gap: 8px; margin-top: 15px; }
+.manager-options button { text-align: left; display: grid; gap: 4px; }
+.manager-options small { white-space: normal; line-height: 1.4; }
+.manager-report { padding: 13px; border-left: 3px solid #cdbb84; background: #d8ca9d12; color: #e5e2cb; line-height: 1.5; }
+.manager-waiting { display: grid; gap: 6px; padding: 12px 0; border-top: 1px solid #a8a77c48; }
+.manager-waiting span { color: var(--muted); font-size: 12px; }
+.manager-call-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.manager-hire .hire-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.manager-alert { max-width: 190px; padding: 7px 11px; border: 1px solid #d0b77985; border-radius: 6px; background: #2c3d2b; color: #f0ddaa; font: 700 11px system-ui, sans-serif; cursor: pointer; }
+.manager-alert[hidden] { display: none; }
 .person-card > .avatar-art { width: 51px; height: 51px; }
 .person-card h3 { margin: 11px 0 6px; font-size: 14px; font-weight: 600; }
 .person-card p { margin: 0; color: #98ad86; font-size: 12px; line-height: 1.7; }

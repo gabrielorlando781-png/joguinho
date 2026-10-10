@@ -115,7 +115,14 @@ export class OfficeScene {
     return layoutObstacles(this.layout,this.state.office);
   }
 
-  getStation(action) { const station = this.hotspots.find((spot) => spot.action === action); return station ? {...station} : null; }
+  getStation(action) {
+    if(action?.startsWith('manager:')){
+      const npc=this.staff?.get(action);
+      if(!npc)return null;
+      return {action,x:npc.x,y:npc.y,range:62,label:npc.employee.name,labelX:npc.x,labelY:npc.y-52,bounds:{x:npc.x-22,y:npc.y-22,w:44,h:44}};
+    }
+    const station = this.hotspots.find((spot) => spot.action === action); return station ? {...station} : null;
+  }
   isNearStation(action) {
     const spot = this.getStation(action);
     return !!spot && this.canStand(this.player.x, this.player.y)
@@ -213,6 +220,8 @@ export class OfficeScene {
   pointerPosition(event) { const rect = this.canvas.getBoundingClientRect(); return {x:(event.clientX-rect.left-this.offsetX)/this.scale,y:(event.clientY-rect.top-this.offsetY)/this.scale}; }
   handlePointerMove(event) { if(this.editor)return this.dragEditor(event);this.pointer = this.pointerPosition(event); this.canvas.style.cursor = this.hotspotAt(this.pointer) ? 'pointer' : 'crosshair'; }
   hotspotAt(point) {
+    const manager=[...this.staff?.values()||[]].find((npc)=>npc.employee.area&&distance(point,npc)<29);
+    if(manager)return this.getStation(manager.employee.id);
     return this.hotspots.find((spot) => (Math.abs(point.x-spot.labelX) < Math.max(62,spot.label.length*4.5) && Math.abs(point.y-spot.labelY) < 15)
       || distance(point,spot)<28 || (point.x>=spot.bounds.x && point.x<=spot.bounds.x+spot.bounds.w && point.y>=spot.bounds.y && point.y<=spot.bounds.y+spot.bounds.h));
   }
@@ -232,7 +241,7 @@ export class OfficeScene {
     if (!path) return false;
     this.keys.clear(); this.destination = {x:target.x,y:target.y}; this.path = path; this.pendingAction = action; return true;
   }
-  nearestHotspot() { return this.hotspots.filter((spot) => this.isNearStation(spot.action)).sort((a,b) => distance(this.player,a)-distance(this.player,b))[0]; }
+  nearestHotspot() { return [...this.hotspots,...[...this.staff?.values()||[]].filter(npc=>npc.employee.area).map(npc=>this.getStation(npc.employee.id))].filter((spot) => this.isNearStation(spot.action)).sort((a,b) => distance(this.player,a)-distance(this.player,b))[0]; }
   canStand(x,y) {
     const epsilon = 1e-6;
     const bounds = this.layout.walk;
@@ -342,7 +351,9 @@ export class OfficeScene {
     const payload={x:this.player.x,y:this.player.y,distance:this.travelAccumulator,station:this.nearestHotspot()?.action||null};
     this.travelAccumulator=0;this.moveReportElapsed=0;this.onMove(payload);
   }
-  employees() {return Array.isArray(this.state.employees)?this.state.employees:[];}
+  employees() {return [...(Array.isArray(this.state.employees)?this.state.employees:[]),...(this.state.management?.managers||[])];}
+  isManagerInCEO(area) {return this.staff?.get(`manager:${area}`)?.managerLocation==='inside';}
+  releaseManager(area) {this.ceoLeaving=area;const npc=this.staff?.get(`manager:${area}`);if(npc){npc.managerTarget=null;npc.managerLocation='leaving';npc.arrivalNotified=false;}}
   hasFurniture(id) {return (this.state.furniture||[]).some((item)=>(typeof item==='string'?item:item.id)===id);}
   ownedFurniture() {return (this.state.furniture||[]).map((item)=>typeof item==='string'?item:`${item.id||''} ${item.name||''}`).join(' ').toLowerCase();}
   rect(ctx, x, y, w, h, color) {
@@ -766,7 +777,7 @@ export class OfficeScene {
       props.push({y:floor.y+floor.h-15,draw:()=>this.drawPlant(c,this.layout.decor[1].x,this.layout.decor[1].y,.72)});
       this.rect(c,floor.x+214,floor.y-78,43,37,'#ba9469');this.rect(c,floor.x+218,floor.y-74,35,29,'#afc9a1');this.polygon(c,[[floor.x+222,floor.y-49],[floor.x+232,floor.y-63],[floor.x+248,floor.y-49]],'#739373');
     }
-    for(const npc of this.staff?.values()||[])props.push({y:npc.y,draw:()=>{this.drawCharacter(c,npc,npc.employee.color);if(npc.phase==='break')this.text(c,npc.activity,npc.x,npc.y-62,8,'#f3ead0','center',600);else if(npc.seated)this.employeeBubble(c,npc.employee,npc.x,npc.y-67);}});
+    for(const npc of this.staff?.values()||[])props.push({y:npc.y,draw:()=>{this.drawCharacter(c,npc,npc.employee.color);if(npc.employee.area){this.text(c,npc.employee.name.toUpperCase(),npc.x,npc.y-59,8,'#f3ead0','center',700);if(npc.managerLocation==='outside')this.text(c,'AGUARDANDO',npc.x,npc.y-70,7,'#e5c988','center',700);}else if(npc.phase==='break')this.text(c,npc.activity,npc.x,npc.y-62,8,'#f3ead0','center',600);else if(npc.seated)this.employeeBubble(c,npc.employee,npc.x,npc.y-67);}});
     for(const door of this.doors||[])props.push({y:door.center.y+6,draw:()=>this.drawAnimatedDoor(c,door)});
     props.push({y:this.player.y,draw:()=>this.drawCharacter(c,this.player,this.state.profile?.avatarColor||'#e3a46b',true)});
     props.sort((a,b)=>a.y-b.y).forEach(prop=>prop.draw());

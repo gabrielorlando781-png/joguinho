@@ -1346,6 +1346,39 @@ def verify_office_experience(browser,url):
     checks.append('Both previous early-stage maps retain physical PC, finance, furniture, project and day-closing access on desktop')
 
 
+def verify_management(browser,url):
+    fixture=json.loads(subprocess.check_output(['node','--input-type=module','-e', """
+      import {createGame,purchaseOfficeItem,hireManager,callManager} from './src/simulation.js';
+      import {enableLocalTest} from './src/local-test.js';
+      const state=enableLocalTest(createGame({name:'Ana',company:'Estúdio Ana'}),true);
+      state.office.stage='floor';state.office.special.ceo=true;
+      for(const area of ['sales','finance']){purchaseOfficeItem(state,'desk');purchaseOfficeItem(state,'chair');hireManager(state,area);callManager(state,area);}
+      console.log(JSON.stringify({version:3,state}));
+    """],cwd=ROOT,text=True))
+    context,page=saved_context(browser,url,fixture,{'width':1920,'height':1080})
+    visit(page,'ceo')
+    panel=page.locator('#station-panel[data-station="ceo"]')
+    assert panel.locator('.manager-visit').count()==1
+    assert panel.locator('.manager-waiting span').count()==1
+    page.wait_for_function('window.__testedScene.isManagerInCEO("sales")',timeout=30000)
+    assert page.evaluate('window.__testedScene.staff.get("manager:finance").managerLocation')!='inside'
+    assert panel.locator('.manager-visit [data-manager-response]').first.is_enabled()
+    page.screenshot(path=str(ARTIFACTS/'ceo-manager-queue.png'),animations='disabled')
+    panel.locator('.manager-visit [data-choice="approve"]').click()
+    assert company(page)['management']['requests'][0]['area']=='finance'
+    page.wait_for_function('window.__testedScene.isManagerInCEO("finance")',timeout=30000)
+    assert not page.evaluate('window.__testedScene.isManagerInCEO("sales")')
+    panel.locator('.manager-visit [data-choice="approve"]').click()
+    assert not company(page)['management']['requests']
+    checks.append('Managers walk to the CEO office while the panel is open, enter one at a time, wait outside, and leave before the next meeting')
+    close_station(page)
+    page.wait_for_function('!window.__testedScene.ceoLeaving',timeout=10000)
+    visit(page,'manager:finance')
+    assert 'Caixa:' in page.locator('#station-panel[data-station="manager:finance"] .manager-report').inner_text()
+    checks.append('The founder can approach a manager in the office and ask for a live report')
+    context.close()
+
+
 def main():
     with socket.socket() as free_port:
         free_port.bind(('127.0.0.1', 0))
@@ -1382,13 +1415,13 @@ def main():
                 browser = p.chromium.launch(executable_path=shutil.which('chromium'), headless=True, args=['--no-sandbox'])
                 try:
                     suite = os.environ.get('GAME_BROWSER_SUITE')
-                    if suite not in ('shop','finance','experience'):
+                    if suite not in ('shop','finance','experience','management'):
                         verify_minimal_office(browser, url)
-                    if suite not in ('shop','hud','experience'):
+                    if suite not in ('shop','hud','experience','management'):
                         verify_finance_board(browser, url)
-                    if suite not in ('hud','finance','experience'):
+                    if suite not in ('hud','finance','experience','management'):
                         verify_browser_shop(browser, url)
-                    if suite not in ('shop', 'hud', 'finance','experience'):
+                    if suite not in ('shop', 'hud', 'finance','experience','management'):
                         verify_computer_login(browser, url)
                         run_journey(browser, url)
                         verify_legacy_save(browser, url)
@@ -1396,6 +1429,7 @@ def main():
                         verify_store_budget(browser, url)
                         run_mobile(browser, url, advanced_fixture)
                     if suite=='experience':verify_office_experience(browser,url)
+                    if suite=='management':verify_management(browser,url)
                     assert not errors, f'Browser errors: {errors}'
                 except Exception:
                     for index, context in enumerate(browser.contexts):

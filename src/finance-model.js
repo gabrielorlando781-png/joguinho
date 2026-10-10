@@ -118,7 +118,7 @@ export function validFinance(finance) {
       && p.expenses && Object.keys(EXPENSE_LABELS).every(key => money(p.expenses[key]))));
 }
 export function getPayroll(state) {
-  const rows = state.employees.map(person => ({ id: person.id, name: person.name, contract: person.contract,
+  const rows = [...state.employees, ...(state.management?.managers || [])].map(person => ({ id: person.id, name: person.name, contract: person.contract,
     salary: person.salary, charges: round(person.salary * (person.contract === 'CLT' ? .7 : .15)) }));
   const salary = round(rows.reduce((sum, person) => sum + person.salary, 0));
   const charges = round(rows.reduce((sum, person) => sum + person.charges, 0));

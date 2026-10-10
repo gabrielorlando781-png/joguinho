@@ -5,6 +5,8 @@ import { createOffice, validOffice, getOfficeOverview, getRoomEffects, getComput
 import { WORK_PUZZLE_COUNT, createWorkPuzzles, validWorkSession } from './work-puzzles.js';
 import { isLocalTestState } from './local-test.js';
 import { createFinance, ensureFinance, validFinance, noteFinanceMovement, noteFinanceRevenue, noteFinanceExpense, closeFinancePeriod, getPayroll, getCreditOverview, getReceivableAction, getReceivableRisk, receivableDefaults, FINANCE_CYCLE } from './finance-model.js';
+import { MANAGER_PROFILES, managerProfile, managerId, createManagement, validManagement, activeManager, managerQueue } from './management.js';
+export { MANAGER_PROFILES, managerQueue } from './management.js';
 export { OFFICE_STAGES, ROOM_LEVELS, OFFICE_SECTORS, SHOP_ITEMS, COMPUTER_LEVELS, ROOM_ACTIONS, getOfficeOverview, getRoomEffects, getComputerMultiplier, getItemEligibility, getExpansionEligibility, getRoomEligibility, getComputerEligibility, getRoomActionEligibility } from './office-progression.js';
 
 const SAVE_KEY = 'joguinho-save-v1';
@@ -133,6 +135,7 @@ export function createGame(profile = {}) {
     projects: [],
     leads: [],
     employees: [],
+    management: createManagement(),
     furniture: [],
     receivables: [],
     ledger: [{ day: 1, label: 'Capital inicial', amount: 20000 }],
@@ -212,7 +215,7 @@ function validSave(state, legacy = false, previousVersion = null) {
   if (!state.receivables.every((r) => Number.isInteger(r.paymentDay) && r.paymentDay >= r.dueDay && Number.isInteger(r.followupCount) && bounded(r.followupCount, 0, 1))) return false;
   if (!entries(state.pendingEvents, (e) => e && string(e.id) && string(e.projectId) && ['scope', 'blocker', 'bug'].includes(e.type) && string(e.title) && string(e.description) && Number.isInteger(e.createdDay) && entries(e.options, (o) => o && string(o.id) && string(o.label) && string(o.description) && bounded(o.cost, 0, 1000000) && bounded(o.hours, 0, 8) && ['sales', 'delivery', 'quality', 'none'].includes(o.area))) || state.pendingEvents.length > 1) return false;
   if (previousVersion === 2) return true;
-  if (!validOffice(state) || !validFinance(state.finance)) return false;
+  if (!validOffice(state) || !validFinance(state.finance) || !validManagement(state.management)) return false;
   if (!state.receivables.every(r => (r.status === undefined || ['pending', 'renegotiated', 'defaulted'].includes(r.status)) && (r.riskScore === undefined || bounded(r.riskScore, 0, 100)) && (r.renegotiated === undefined || typeof r.renegotiated === 'boolean'))) return false;
   if (!validWorkSession(state)) return false;
   if (!state.employees.every((person) => person.onboardingUntil === undefined || (Number.isInteger(person.onboardingUntil) && bounded(person.onboardingUntil, 0, 100000000)))) return false;
@@ -268,6 +271,8 @@ export function loadGame(storageKey = SAVE_KEY) {
     }
     // Never start advancing a restored company before the player presses play.
     if (saved.state.workSession === undefined) saved.state.workSession = null;
+    if (saved.state.management === undefined) saved.state.management = createManagement();
+    reconcileManagement(saved.state);
     saved.state.paused = true;
     ensureFinance(saved.state);
     return saved.state;
@@ -387,6 +392,139 @@ export function hireEmployee(state, candidateId, contract = 'PJ') {
   workstation.employeeId = candidateId;
   addLog(state, `${candidate.name} entrou para o time com contrato ${contract}. Custo por dia útil: R$ ${dailyCost.toFixed(2)}.`);
   return result(true, `${candidate.name} já pode começar. O salário é descontado a cada dia útil.`);
+}
+
+export function hireManager(state, area, contract = 'CLT') {
+  const profile = managerProfile(area);
+  if (!running(state) || !profile) return result(false, 'Gerente indisponível.');
+  if (!state.office.special.ceo) return result(false, 'Construa a sala do CEO antes de trazer gerentes. É lá que as decisões chegam até você.');
+  if (activeManager(state, area)) return result(false, `${profile.name} já lidera essa área.`);
+  if (!['PJ', 'CLT'].includes(contract)) return result(false, 'Escolha um contrato PJ ou CLT.');
+  const post = state.office.workstations.find((item) => item.employeeId === null && item.desk && item.chair && item.computerLevel > 0);
+  if (!post) return result(false, 'Prepare um posto livre com mesa, cadeira e computador para o gerente.');
+  const dailyCost = round(profile.salary * (contract === 'CLT' ? 1.7 : 1.15) / 20);
+  if (state.cash < dailyCost * 5 + 550) return result(false, 'Reserve caixa para cinco dias de custos do gerente antes de contratar.');
+  const person = { ...profile, id: managerId(area), contract, hiredDay: state.day };
+  state.management.managers.push(person);
+  post.employeeId = person.id;
+  addLog(state, `${profile.name} assumiu ${profile.role.toLowerCase()}. Custo por dia útil: R$ ${dailyCost.toFixed(2)}.`);
+  return result(true, `${profile.name} começou a organizar ${profile.role.toLowerCase()}. O custo entra na folha a cada dia útil.`);
+}
+
+function queueManager(state, area, kind, title, detail, ref = '') {
+  if (!activeManager(state, area) || state.management.requests.some((item) => item.area === area)) return null;
+  if (managerSnoozed(state, area, kind, ref)) return null;
+  const request = { id: state.management.nextRequestId++, area, kind, title, detail, ref: String(ref), day: state.day };
+  state.management.requests.push(request);
+  addLog(state, `${managerProfile(area).name} pediu uma conversa na sala do CEO: ${title}.`);
+  return request;
+}
+
+function managerSnoozed(state, area, kind, ref = '') {
+  const paused = state.management?.snoozed?.[area];
+  return paused?.kind === kind && paused?.ref === String(ref) && paused.untilDay >= state.day;
+}
+
+export function reconcileManagement(state) {
+  if (!state.management) return;
+  state.management.requests = state.management.requests.filter((request) => {
+    if (request.kind === 'sales-contract') return state.leads.some((lead) => lead.id === request.ref && !lead.negotiation);
+    if (request.kind === 'delivery-mode') return activeProjects(state).some((project) => project.id === request.ref && project.mode === 'fast');
+    if (request.kind === 'project-event') return state.pendingEvents.some((event) => event.id === request.ref);
+    if (request.kind === 'finance-collect') return state.receivables.some((item) => item.projectId === request.ref && item.status !== 'defaulted');
+    if (request.kind === 'hr-hire') return !state.employees.some((person) => person.id === request.ref);
+    return true;
+  });
+}
+
+export function getManagerReport(state, area) {
+  if (!activeManager(state, area)) return null;
+  if (area === 'sales') return `Pipeline: ${state.leads.length} contatos; ${activeProjects(state).length}/3 contratos em execução. ${state.leads.filter((lead) => lead.discovered && !lead.negotiation).length} escopos já qualificados. Reputação: ${Math.round(state.reputation)}/100.`;
+  if (area === 'development') return `${activeProjects(state).length} projetos ativos; dívida técnica ${Math.round(state.debt)}%. ${state.employees.filter((person) => person.assignmentRole === 'quality').length} pessoa(s) em revisão. ${state.pendingEvents.length} imprevisto(s) por resolver. Próximo prazo: ${activeProjects(state).sort((a, b) => a.deadline - b.deadline)[0]?.deadline ?? 'nenhum'}.`;
+  if (area === 'finance') {
+    const daily = getOfficeOverview(state).dailyRent + getPayroll(state).total / 20 + getOfficeOverview(state).monthlyMaintenance / 28;
+    return `Caixa: R$ ${Math.round(state.cash)}. Fôlego estimado: ${Math.max(0, Math.floor(state.cash / Math.max(1, daily)))} dias. A receber: R$ ${Math.round(state.receivables.reduce((sum, item) => sum + item.amount, 0))}. Dívida: R$ ${Math.round(state.loan.balance)}.`;
+  }
+  return `Equipe: ${state.employees.length} profissionais e ${state.management.managers.length} gerentes. Postos livres: ${getOfficeOverview(state).freePosts}. Moral média: ${state.employees.length ? Math.round(state.employees.reduce((sum, person) => sum + person.morale, 0) / state.employees.length) : 0}%. Candidatos ainda disponíveis: ${CANDIDATES.filter((candidate) => !state.employees.some((person) => person.id === candidate.id)).length}.`;
+}
+
+export function callManager(state, area) {
+  if (!state.office.special.ceo || !activeManager(state, area)) return result(false, 'Esse gerente não está disponível na sala do CEO.');
+  const pending = state.management.requests.find((item) => item.area === area);
+  if (pending) return result(false, `${managerProfile(area).name} já está aguardando para conversar.`);
+  const request = queueManager(state, area, 'consult', 'Relatório da área', 'Trouxe os números atuais do setor para sua análise.');
+  return result(true, `${managerProfile(area).name} está vindo à sala do CEO.`, { request });
+}
+
+export function respondManager(state, requestId, choice) {
+  if (!running(state) || !state.office.special.ceo) return result(false, 'Entre na sala do CEO para responder.');
+  const request = managerQueue(state)[0];
+  if (!request || request.id !== requestId) return result(false, 'Converse primeiro com o gerente que entrou na sala.');
+  const projectEvent = request.kind === 'project-event' ? state.pendingEvents.find((event) => event.id === request.ref) : null;
+  if (request.kind === 'project-event' ? !projectEvent?.options.some((option) => option.id === choice) : !['approve', 'decline'].includes(choice)) return result(false, 'Escolha uma decisão disponível.');
+  let outcome = result(true, 'Decisão registrada.');
+  if (projectEvent) outcome = resolveProjectEvent(state, projectEvent.id, choice, { managed: true });
+  else if (choice === 'approve') {
+    if (request.kind === 'sales-contract') outcome = negotiateProject(state, request.ref, 'standard');
+    else if (request.kind === 'delivery-mode') outcome = setProjectMode(state, request.ref, 'careful');
+    else if (request.kind === 'finance-credit') outcome = takeLoan(state, Math.min(2000, getCreditOverview(state).available));
+    else if (request.kind === 'finance-collect') {
+      const receivable = state.receivables.find((item) => item.projectId === request.ref);
+      if (!receivable || receivable.dueDay >= state.day) outcome = result(false, 'A cobrança já foi resolvida ou ainda não venceu.');
+      else { receivable.followupCount = 1; receivable.paymentDay = Math.min(receivable.paymentDay, state.day + 1); addLog(state, `${managerProfile('finance').name} fez a cobrança cordial de ${receivable.client}.`); outcome = result(true, 'Cobrança feita sem usar as horas do fundador. O cliente recebeu um lembrete.'); }
+    } else if (request.kind === 'hr-hire') outcome = hireEmployee(state, request.ref, 'CLT');
+  }
+  if (!outcome.ok) {
+    if (!projectEvent) state.management.requests.shift();
+    addLog(state, `${managerProfile(request.area).name}: ${outcome.message}`);
+    return outcome;
+  }
+  if (choice === 'decline' && !projectEvent) {
+    state.management.snoozed ||= {};
+    state.management.snoozed[request.area] = { kind: request.kind, ref: request.ref, untilDay: state.day + 4 };
+  }
+  state.management.requests.shift();
+  addLog(state, `${managerProfile(request.area).name}: ${choice === 'decline' && !projectEvent ? 'proposta recusada pelo fundador' : 'decisão executada pela área'}.`);
+  return result(true, choice === 'decline' && !projectEvent ? 'O gerente recebeu sua decisão e voltou ao trabalho.' : outcome.message);
+}
+
+function runManagerRoutines(state) {
+  if (!state.management?.managers.length) return;
+  if (activeManager(state, 'sales')) {
+    if (state.leads.length < 3) addLead(state);
+    const lead = state.leads.find((item) => !item.negotiation && !item.discovered);
+    if (lead) {
+      lead.discovered = true;
+      lead.qualification = { confidence: 80, scope: 'Escopo confirmado pelo gerente comercial.', risks: 'Prazo e capacidade devem ser aprovados pelo fundador.' };
+    }
+    const best = state.leads.filter((item) => !item.negotiation && item.discovered && !managerSnoozed(state, 'sales', 'sales-contract', item.id)).sort((a, b) => b.price / b.hours - a.price / a.hours)[0];
+    if (best && activeProjects(state).length < 3) queueManager(state, 'sales', 'sales-contract', `Contrato de ${best.client}`, `Proposta padrão de R$ ${best.price}, prazo de ${best.duration} dias. ${best.title}. Aceitar autoriza a negociação; o cliente ainda pode recusar.`, best.id);
+  }
+  if (activeManager(state, 'development')) {
+    const projects = activeProjects(state).sort((a, b) => a.deadline - b.deadline);
+    for (const [index, person] of state.employees.entries()) {
+      person.assignment = projects.length ? projects[index % projects.length].id : 'auto';
+      person.assignmentRole = person.stress > 70 || (state.employees.length > 1 && state.debt > 35 && index === state.employees.length - 1) ? 'quality' : 'delivery';
+    }
+    const event = state.pendingEvents[0];
+    if (event) queueManager(state, 'development', 'project-event', event.title, `${event.description} A equipe apresenta as alternativas para você decidir.`, event.id);
+    const urgent = projects.find((project) => project.mode === 'fast' && (project.quality < 65 || state.debt > 50));
+    if (urgent) queueManager(state, 'development', 'delivery-mode', `Revisar ${urgent.title}`, `O ritmo rápido elevou o risco. Mudar para caprichado melhora qualidade e reduz bugs, mas pode atrasar a entrega. Dívida técnica: ${Math.round(state.debt)}%.`, urgent.id);
+  }
+  if (activeManager(state, 'finance')) {
+    const overdue = state.receivables.find((item) => item.dueDay < state.day && item.status !== 'defaulted' && item.followupCount === 0);
+    if (overdue) queueManager(state, 'finance', 'finance-collect', `Cobrar ${overdue.client}`, `Pagamento de R$ ${Math.round(overdue.amount)} venceu no dia ${overdue.dueDay}. Uma cobrança cordial pode antecipar o recebimento; autorizar não usa suas horas.`, overdue.projectId);
+    else {
+      const daily = getOfficeOverview(state).dailyRent + getPayroll(state).total / 20 + getOfficeOverview(state).monthlyMaintenance / 28;
+      if (state.cash / Math.max(1, daily) < 8 && getCreditOverview(state).available >= 1) queueManager(state, 'finance', 'finance-credit', 'Capital de giro em risco', `O caixa cobre cerca de ${Math.max(0, Math.floor(state.cash / Math.max(1, daily)))} dias. Um empréstimo de até R$ 2.000 dá fôlego, mas gera juros de ${(state.loan.interest * 100).toFixed(0)}% a cada 28 dias.`);
+    }
+  }
+  if (activeManager(state, 'hr')) {
+    state.employees.forEach((person) => { person.stress = round(clamp(person.stress - 2, 0, 100)); person.morale = round(clamp(person.morale + 1, 0, 100)); });
+    const candidate = CANDIDATES.find((person) => !state.employees.some((employee) => employee.id === person.id) && !managerSnoozed(state, 'hr', 'hr-hire', person.id));
+    if (candidate && !state.interviews[candidate.id]) state.interviews[candidate.id] = { day: state.day, candidateId: candidate.id, score: Math.round(clamp(65 + candidate.productivity * 3 + getRoomEffects(state).candidateScoreBonus, 0, 100)), strength: candidate.trait, risk: 'Custo fixo adicional exige contratos suficientes.' };
+    if (candidate && getOfficeOverview(state).freePosts > 0) queueManager(state, 'hr', 'hr-hire', `Contratar ${candidate.name}`, `${candidate.role}, salário-base de R$ ${candidate.salary}/mês. Contrato CLT custará cerca de R$ ${Math.round(candidate.salary * 1.7)}/mês com encargos.`, candidate.id);
+  }
 }
 
 export function assignEmployee(state, employeeId, projectId = 'auto', role = 'delivery') {
@@ -600,14 +738,14 @@ function scheduleProjectEvent(state) {
   addLog(state, `${project.client}: ${definition.title} Decida como o time deve reagir na área de projetos.`);
 }
 
-export function resolveProjectEvent(state, eventId, choice) {
+export function resolveProjectEvent(state, eventId, choice, { managed = false } = {}) {
   if (!running(state)) return result(false, 'A empresa está encerrada.');
   const event = state.pendingEvents.find((item) => item.id === eventId);
   const project = event && activeProjects(state).find((item) => item.id === event.projectId);
   const option = event && EVENT_TYPES[event.type].options.find((item) => item.id === choice);
   if (!project || !option) return result(false, 'Esse evento ou essa decisão não está disponível.');
   if (option.cost > 0 && state.cash < option.cost) return result(false, 'O caixa não cobre essa decisão.');
-  if (option.hours > 0 && !spendHours(state, option.area, option.hours)) return result(false, `A decisão precisa de ${option.hours}h livres de ${option.area === 'sales' ? 'vendas' : option.area === 'quality' ? 'qualidade' : 'entrega'} em um dia útil.`);
+  if (option.hours > 0 && !managed && !spendHours(state, option.area, option.hours)) return result(false, `A decisão precisa de ${option.hours}h livres de ${option.area === 'sales' ? 'vendas' : option.area === 'quality' ? 'qualidade' : 'entrega'} em um dia útil.`);
   if (option.cost) recordMoney(state, -option.cost, `Imprevisto: ${project.client}`);
   if (event.type === 'scope') {
     if (choice === 'renegotiate' || choice === 'absorb') project.hours = round(project.hours * 1.2);
@@ -992,6 +1130,7 @@ export function advanceDay(state) {
   const beforeWorked = state.stats.hoursWorked;
   const beforeDelivered = state.stats.delivered;
   if (weekday) {
+    runManagerRoutines(state);
     const projects = activeProjects(state).sort((a, b) => a.deadline - b.deadline);
     const qualityHours = availableHours(state, 'quality');
     const qualityBoost = (hasFurniture(state, 'whiteboard') ? 4 : 3) * effects.reviewMultiplier * (state.office.bonuses.alignmentUntil >= day ? 1.15 : 1);
@@ -1048,6 +1187,10 @@ export function advanceDay(state) {
     const recovery = state.office.amenities.lounge ? 13 : 8;
     state.energy = round(clamp(state.energy - energySpent + recovery, 0, 100));
     scheduleProjectEvent(state);
+    if (activeManager(state, 'development') && state.pendingEvents.length) {
+      const event = state.pendingEvents[0];
+      queueManager(state, 'development', 'project-event', event.title, `${event.description} A equipe apresenta as alternativas para você decidir.`, event.id);
+    }
   } else {
     state.energy = clamp(state.energy + 25, 0, 100);
     state.employees.forEach((person) => {
@@ -1092,6 +1235,7 @@ export function advanceDay(state) {
   const expired = state.leads.filter((lead) => lead.expiresDay <= day);
   if (expired.length) addLog(state, `${expired.length} oportunidade${expired.length > 1 ? 's expiraram' : ' expirou'}. Outros clientes ainda vão aparecer.`);
   state.leads = state.leads.filter((lead) => lead.expiresDay > day);
+  reconcileManagement(state);
 
   state.consecutiveNegativeDays = state.cash < 0 ? state.consecutiveNegativeDays + 1 : 0;
   if (state.consecutiveNegativeDays >= 60) {

@@ -118,7 +118,7 @@ export function getOfficeOverview(state, includeEligibility = true) {
   const overview = { stage, usedSlots, maxSlots: stage.slots, capacity, freePosts, dailyRent, monthlyMaintenance, nextMaintenanceDay: office.nextMaintenanceDay,
     noise: effects.noise, synergy: effects.synergy, nextStage: OFFICE_STAGES[stageIndex(stage.id) + 1] || null,
     rooms: OFFICE_SECTORS.map((sector) => ({ ...sector, level: levelFor(office.rooms[sector.id]) })),
-    workstations: office.workstations.map((post) => ({ ...post, computer: COMPUTER_LEVELS[post.computerLevel - 1], occupantName: post.employeeId === 'founder' ? state.profile.name : state.employees.find((person) => person.id === post.employeeId)?.name || null })),
+    workstations: office.workstations.map((post) => ({ ...post, computer: COMPUTER_LEVELS[post.computerLevel - 1], occupantName: post.employeeId === 'founder' ? state.profile.name : [...state.employees, ...(state.management?.managers || [])].find((person) => person.id === post.employeeId)?.name || null })),
   };
   if (includeEligibility) {
     overview.expansion = getExpansionEligibility(state);
@@ -218,9 +218,9 @@ export function validOffice(state) {
   if (!office || !validPlacement(office.placement) || !OFFICE_STAGES.some((stage) => stage.id === office.stage) || typeof office.migrated !== 'boolean') return false;
   if (!Array.isArray(office.workstations) || !office.workstations.length || office.workstations.length > 21) return false;
   const posts = office.workstations;
-  if (!posts.every((post) => post && /^post-\d+$/.test(post.id) && typeof post.desk === 'boolean' && post.desk && typeof post.chair === 'boolean' && integer(post.computerLevel, 1, 3) && (post.employeeId === null || post.employeeId === 'founder' || state.employees.some((person) => person.id === post.employeeId)) && (post.employeeId === null || readyPost(post)))) return false;
+  if (!posts.every((post) => post && /^post-\d+$/.test(post.id) && typeof post.desk === 'boolean' && post.desk && typeof post.chair === 'boolean' && integer(post.computerLevel, 1, 3) && (post.employeeId === null || post.employeeId === 'founder' || [...state.employees, ...(state.management?.managers || [])].some((person) => person.id === post.employeeId)) && (post.employeeId === null || readyPost(post)))) return false;
   if (new Set(posts.map((post) => post.id)).size !== posts.length || new Set(posts.filter((post) => post.employeeId !== null).map((post) => post.employeeId)).size !== posts.filter((post) => post.employeeId !== null).length) return false;
-  if (posts.filter((post) => post.employeeId === 'founder').length !== 1 || !state.employees.every((person) => posts.some((post) => post.employeeId === person.id))) return false;
+  if (posts.filter((post) => post.employeeId === 'founder').length !== 1 || ![...state.employees, ...(state.management?.managers || [])].every((person) => posts.some((post) => post.employeeId === person.id))) return false;
   if (!integer(office.nextWorkstationId, 2) || posts.some((post) => Number(post.id.slice(5)) >= office.nextWorkstationId)) return false;
   if (!office.rooms || !OFFICE_SECTORS.every((sector) => ROOM_LEVELS.some((level) => level.id === office.rooms[sector.id]))) return false;
   if (!office.special || !['meeting', 'ceo'].every((id) => typeof office.special[id] === 'boolean') || !office.amenities || !['lounge', 'floor', 'decor', 'banner'].every((id) => typeof office.amenities[id] === 'boolean')) return false;
