@@ -72,7 +72,7 @@ test('consultations use the same queue, saved visits reload, and older saves gai
     const legacy = createGame();
     delete legacy.management;
     values.set('joguinho-save-v1', JSON.stringify({ version: 3, state: legacy }));
-    assert.deepEqual(loadGame().management, { managers: [], requests: [], nextRequestId: 1, snoozed: {} });
+    assert.deepEqual(loadGame().management, { managers: [], requests: [], nextRequestId: 1, snoozed: {}, meeting: null, lastMeetingDay: 0 });
   } finally { if (previous === undefined) delete globalThis.localStorage; else globalThis.localStorage = previous; }
 });
 

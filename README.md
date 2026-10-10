@@ -13,15 +13,17 @@ A versão pronta fica em `docs/index.html`, com código, estilos e imagens embut
 ## Jogar
 
 1. Escolha nome, empresa, idade, ponto forte e cor do personagem.
-2. Ande com **WASD**, **setas** ou um **clique/toque no chão**. Pressione **E** perto do setor para consultar. Clicar em uma mesa ou no nome de um setor faz o personagem caminhar até ele e abrir a consulta ao chegar.
+2. Ande com **WASD**, **setas** ou um **clique no chão**. Pressione **E** perto do setor ou de um colega para conversar. Clicar em uma mesa, setor ou pessoa faz o personagem caminhar até lá.
 3. Vá ao **Comercial**. Investigue o escopo e escolha entre proposta competitiva, equilibrada e premium. A interface mostra a chance de fechar: discovery, reputação, salas e apresentações ajudam. Há uma tentativa por contato; uma recusa não permite repetir a proposta.
 4. Vá ao **Meu PC**: o fundador se senta diante do computador. Na primeira visita, crie a senha do PC do jogo; nas seguintes, entre com ela. Abra **Desenvolver** e digite `rotina` para distribuir oito horas, `foco` para escolher o projeto e `trabalhar` para iniciar cinco puzzles de escritório. Discovery, entrevistas, deslocamento e protótipos disputam esse orçamento.
-5. Consulte o **Quadro de projetos** para acompanhar entregas, escolher o ritmo e resolver pedidos extras, bloqueios ou bugs. Na **Loja**, compre uma mesa e uma cadeira para abrir uma vaga. No **RH**, entreviste antes de contratar e distribua pessoas entre desenvolvimento e revisão.
+5. Consulte o **Quadro de projetos** para acompanhar entregas, escolher o ritmo e resolver pedidos extras, bloqueios ou bugs. Na **Loja**, compre uma mesa e uma cadeira para cada nova vaga. No **RH**, entreviste antes de contratar, distribua pessoas entre desenvolvimento e revisão e acompanhe a aba **Carreira**. Novos candidatos aparecem toda semana.
 6. Depois de construir a **sala do CEO**, abra a aba **Gerentes** no RH. Cada gerente precisa de um posto completo e entra na folha. Eles trabalham a rotina do setor e trazem contratos, imprevistos, cobranças, crédito e contratações para sua decisão no gabinete. O aviso no topo leva você até a sala; os gerentes chegam andando e aguardam a vez do lado de fora. Você também pode clicar em um gerente pelo escritório para consultar um relatório atual, ou chamá-lo da sala do CEO.
-7. Faça pausas na **Copa** e no **Descanso**. Compre melhorias na **Loja**: elas aparecem no cenário, ocupam espaço e afetam produção, moral, negociações e custos.
-8. Vá a **Fechar o dia** para executar a rotina restante, contabilizar custos e consultar o resumo. Também pode usar play e velocidades **1×, 2× e 4×**; um dia dura dois minutos em 1×. Consultar um setor pausa o tempo.
-9. Confira pagamentos e cobranças no **Financeiro**. Consulte o **Diário** para ver reputação, histórico, objetivos, guia e identidade do fundador.
-10. Depois de duas entregas, abra **Meu PC → Laboratório**: construa um MVP, valide com usuários e lance uma receita recorrente.
+7. Converse com qualquer funcionário no escritório sobre bem-estar, projetos, empresa e carreira. Reconhecer o trabalho de uma pessoa uma vez por dia melhora sua moral. Após acumular produção, experiência e tempo no cargo, promova-a de júnior a pleno, sênior e liderança.
+8. Construa a **sala de reunião** para convocar gerentes e líderes. Escolha uma pauta, veja cada participante caminhar até a sala e espere todos chegarem para ouvir a conversa e decidir o encaminhamento.
+9. Faça pausas na **Copa** e no **Descanso**. Compre melhorias na **Loja**: elas aparecem no cenário, ocupam espaço e afetam produção, moral, negociações e custos.
+10. Vá a **Fechar o dia** para executar a rotina restante, contabilizar custos e consultar o resumo. Também pode usar play e velocidades **1×, 2× e 4×**; um dia dura dois minutos em 1×. Consultar um setor pausa o tempo.
+11. Confira pagamentos e cobranças no **Financeiro**. Consulte o **Diário** para ver reputação, histórico, objetivos, guia e identidade do fundador.
+12. Depois de duas entregas, abra **Meu PC → Laboratório**: construa um MVP, valide com usuários e lance uma receita recorrente.
 
 **Esc** fecha uma consulta. O escritório permanece visível durante as consultas. O computador tem área de trabalho, aplicativos, janelas e barra de tarefas; sair dele levanta o personagem. O personagem encontra caminhos em volta dos móveis. A câmera acompanha o personagem e preenche a tela com a área útil do escritório. As configurações ficam na engrenagem do canto superior direito; ali estão a tela cheia, o perfil e os controles do jogo.
 
@@ -176,6 +178,8 @@ Abra **Configurações → Organizar escritório**, o botão **Editar layout** n
 
 Funcionários contratados levantam, caminham por rotas que respeitam mesas e paredes, visitam copa, descanso e RH e retornam aos postos. Pausar o tempo ou abrir uma consulta interrompe a circulação normal; gerentes chamados ao CEO continuam o trajeto para que a reunião aconteça. Esse movimento não gasta horas nem caixa do fundador. Portas de salas fechadas e de vidro abrem por aproximação e fecham depois da passagem de pessoas.
 
+O Comercial agora recebe mais modelos de proposta, com até dez contatos em aberto; a capacidade de projetos ativos cresce conforme a equipe aumenta. O RH mantém quatro candidatos disponíveis e renova a seleção semanalmente, permitindo preencher os postos de um escritório maior. A avaliação de carreira considera produção recente, experiência, tempo no cargo, moral e estresse. Cada promoção aumenta salário e produtividade; quem alcança liderança participa das reuniões. Colegas próximos trocam falas em caixas pixel durante o expediente. Ao abordá-los, as respostas usam os projetos, prazos e indicadores da partida.
+
 Os quatro gerentes têm responsabilidades diferentes: Comercial prospecta e qualifica contatos, Desenvolvimento distribui trabalho e apresenta riscos ou imprevistos, Financeiro acompanha recebíveis e fôlego de caixa, e RH entrevista candidatos e acompanha moral e estresse. Eles não fecham contratos, tomam empréstimos nem contratam pessoas sem sua autorização. Salários e encargos aparecem no Financeiro; mais delegação melhora a rotina, mas também aumenta o custo fixo. As decisões aguardam na fila até você recebê-los na sala do CEO, um por vez. Relatórios podem ser consultados diretamente ao abordar o gerente.
 
 O experimento de cômodos em mapas separados, andares e elevador foi retirado. Ao carregar um save daquela versão, os valores dessas expansões são devolvidos uma vez, preservando móveis, funcionários, contratos e dados financeiros. O escritório volta a ser um mapa único.
@@ -186,7 +190,7 @@ O progresso fica no `localStorage` deste navegador. Empresa, perfil, equipe, pro
 
 Limpar os dados do navegador apaga a partida. Não há conta, sincronização entre dispositivos ou salvamento no servidor. Você pode começar outra história pelo **Diário → Guia & identidade**, com confirmação antes de substituir a empresa.
 
-Esta versão aprofunda contratos, equipe, eventos, produto e evolução do escritório, usando parâmetros econômicos simplificados. O editor permite posicionar livremente os elementos comprados sobre plantas iniciais. Novos andares, concorrentes e expansão do SaaS após o MVP continuam fora desta versão. Os modelos de contrato e o grupo de candidatos continuam limitados.
+Esta versão aprofunda contratos, equipe, eventos, produto e evolução do escritório, usando parâmetros econômicos simplificados. O editor permite posicionar livremente os elementos comprados sobre plantas iniciais. Novos andares, concorrentes e expansão do SaaS após o MVP continuam fora desta versão.
 
 ## Executar
 

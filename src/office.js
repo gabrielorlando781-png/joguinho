@@ -116,10 +116,10 @@ export class OfficeScene {
   }
 
   getStation(action) {
-    if(action?.startsWith('manager:')){
-      const npc=this.staff?.get(action);
+    if(action?.startsWith('manager:')||action?.startsWith('person:')){
+      const npc=this.staff?.get(action.startsWith('person:')?action.slice(7):action);
       if(!npc)return null;
-      return {action,x:npc.x,y:npc.y,range:62,label:npc.employee.name,labelX:npc.x,labelY:npc.y-52,bounds:{x:npc.x-22,y:npc.y-22,w:44,h:44}};
+      return {action,x:npc.x,y:npc.y,range:62,label:npc.employee.name,verb:'Conversar',labelX:npc.x,labelY:npc.y-52,bounds:{x:npc.x-22,y:npc.y-22,w:44,h:44}};
     }
     const station = this.hotspots.find((spot) => spot.action === action); return station ? {...station} : null;
   }
@@ -220,8 +220,8 @@ export class OfficeScene {
   pointerPosition(event) { const rect = this.canvas.getBoundingClientRect(); return {x:(event.clientX-rect.left-this.offsetX)/this.scale,y:(event.clientY-rect.top-this.offsetY)/this.scale}; }
   handlePointerMove(event) { if(this.editor)return this.dragEditor(event);this.pointer = this.pointerPosition(event); this.canvas.style.cursor = this.hotspotAt(this.pointer) ? 'pointer' : 'crosshair'; }
   hotspotAt(point) {
-    const manager=[...this.staff?.values()||[]].find((npc)=>npc.employee.area&&distance(point,npc)<29);
-    if(manager)return this.getStation(manager.employee.id);
+    const person=[...this.staff?.values()||[]].find((npc)=>distance(point,npc)<29);
+    if(person)return this.getStation(person.employee.area?person.employee.id:`person:${person.employee.id}`);
     return this.hotspots.find((spot) => (Math.abs(point.x-spot.labelX) < Math.max(62,spot.label.length*4.5) && Math.abs(point.y-spot.labelY) < 15)
       || distance(point,spot)<28 || (point.x>=spot.bounds.x && point.x<=spot.bounds.x+spot.bounds.w && point.y>=spot.bounds.y && point.y<=spot.bounds.y+spot.bounds.h));
   }
@@ -241,7 +241,7 @@ export class OfficeScene {
     if (!path) return false;
     this.keys.clear(); this.destination = {x:target.x,y:target.y}; this.path = path; this.pendingAction = action; return true;
   }
-  nearestHotspot() { return [...this.hotspots,...[...this.staff?.values()||[]].filter(npc=>npc.employee.area).map(npc=>this.getStation(npc.employee.id))].filter((spot) => this.isNearStation(spot.action)).sort((a,b) => distance(this.player,a)-distance(this.player,b))[0]; }
+  nearestHotspot() { return [...this.hotspots,...[...this.staff?.values()||[]].map(npc=>this.getStation(npc.employee.area?npc.employee.id:`person:${npc.employee.id}`))].filter((spot) => spot&&this.isNearStation(spot.action)).sort((a,b) => distance(this.player,a)-distance(this.player,b))[0]; }
   canStand(x,y) {
     const epsilon = 1e-6;
     const bounds = this.layout.walk;
@@ -319,11 +319,19 @@ export class OfficeScene {
     updateStaff(this,dt);updateDoors(this,dt);
     this.moveReportElapsed+=dt;
     if(this.blockedInput()) {this.keys.clear();this.player.moving=false;this.reportMovement(true);return;}
+    if(this.pendingAction?.startsWith('person:')||this.pendingAction?.startsWith('manager:')){
+      this.followTimer=(this.followTimer||0)+dt;
+      if(this.followTimer>.75){
+        this.followTimer=0;
+        const spot=this.getStation(this.pendingAction);
+        if(spot&&this.destination&&distance(spot,this.destination)>26){const path=this.findPath(this.player,spot);if(path){this.destination={x:spot.x,y:spot.y};this.path=path;}}
+      }
+    }
     let dx=(this.keys.has('d')||this.keys.has('arrowright')?1:0)-(this.keys.has('a')||this.keys.has('arrowleft')?1:0);
     let dy=(this.keys.has('s')||this.keys.has('arrowdown')?1:0)-(this.keys.has('w')||this.keys.has('arrowup')?1:0);
     let pointerTravel=false, target=null;
     if(!dx && !dy && this.destination) {
-      if(distance(this.player,this.destination)<5) {const action=this.pendingAction;this.cancelRoute();this.player.moving=false;this.reportMovement(true);if(action)this.activate(action);return;}
+      if(distance(this.player,this.destination)<5) {const action=this.pendingAction;this.cancelRoute();this.player.moving=false;this.reportMovement(true);if(action){if(!this.activate(action)&&(action.startsWith('person:')||action.startsWith('manager:')))this.requestInteraction(action);}return;}
       while(this.path?.length>1 && distance(this.player,this.path[0])<1e-7) this.path.shift();
       target=this.path?.[0]||this.destination;dx=target.x-this.player.x;dy=target.y-this.player.y;pointerTravel=true;
     }
@@ -354,6 +362,8 @@ export class OfficeScene {
   employees() {return [...(Array.isArray(this.state.employees)?this.state.employees:[]),...(this.state.management?.managers||[])];}
   isManagerInCEO(area) {return this.staff?.get(`manager:${area}`)?.managerLocation==='inside';}
   releaseManager(area) {this.ceoLeaving=area;const npc=this.staff?.get(`manager:${area}`);if(npc){npc.managerTarget=null;npc.managerLocation='leaving';npc.arrivalNotified=false;}}
+  areMeetingAttendeesReady() {const meeting=this.state.management?.meeting;return !!meeting?.attendees.length&&meeting.attendees.every((id)=>this.staff?.get(id)?.meetingLocation==='inside');}
+  releaseMeeting(ids) {this.meetingLeaving=new Set(ids);for(const id of ids){const npc=this.staff?.get(id);if(npc){npc.meetingTarget=null;npc.meetingLocation='leaving';}}}
   hasFurniture(id) {return (this.state.furniture||[]).some((item)=>(typeof item==='string'?item:item.id)===id);}
   ownedFurniture() {return (this.state.furniture||[]).map((item)=>typeof item==='string'?item:`${item.id||''} ${item.name||''}`).join(' ').toLowerCase();}
   rect(ctx, x, y, w, h, color) {
@@ -777,14 +787,38 @@ export class OfficeScene {
       props.push({y:floor.y+floor.h-15,draw:()=>this.drawPlant(c,this.layout.decor[1].x,this.layout.decor[1].y,.72)});
       this.rect(c,floor.x+214,floor.y-78,43,37,'#ba9469');this.rect(c,floor.x+218,floor.y-74,35,29,'#afc9a1');this.polygon(c,[[floor.x+222,floor.y-49],[floor.x+232,floor.y-63],[floor.x+248,floor.y-49]],'#739373');
     }
-    for(const npc of this.staff?.values()||[])props.push({y:npc.y,draw:()=>{this.drawCharacter(c,npc,npc.employee.color);if(npc.employee.area){this.text(c,npc.employee.name.toUpperCase(),npc.x,npc.y-59,8,'#f3ead0','center',700);if(npc.managerLocation==='outside')this.text(c,'AGUARDANDO',npc.x,npc.y-70,7,'#e5c988','center',700);}else if(npc.phase==='break')this.text(c,npc.activity,npc.x,npc.y-62,8,'#f3ead0','center',600);else if(npc.seated)this.employeeBubble(c,npc.employee,npc.x,npc.y-67);}});
+    for(const npc of this.staff?.values()||[])props.push({y:npc.y,draw:()=>{this.drawCharacter(c,npc,npc.employee.color);this.text(c,npc.employee.name.toUpperCase(),npc.x,npc.y-59,8,'#f3ead0','center',700);if(npc.meetingLocation==='inside')this.text(c,'REUNIÃO',npc.x,npc.y-71,7,'#e5c988','center',700);else if(npc.managerLocation==='outside')this.text(c,'AGUARDANDO',npc.x,npc.y-70,7,'#e5c988','center',700);else if(npc.phase==='break'&&!npc.employee.area)this.text(c,npc.activity,npc.x,npc.y-72,7,'#f3ead0','center',600);}});
     for(const door of this.doors||[])props.push({y:door.center.y+6,draw:()=>this.drawAnimatedDoor(c,door)});
     props.push({y:this.player.y,draw:()=>this.drawCharacter(c,this.player,this.state.profile?.avatarColor||'#e3a46b',true)});
     props.sort((a,b)=>a.y-b.y).forEach(prop=>prop.draw());
     this.drawWorldData(c);
     this.hotspots.forEach(spot=>this.drawBadge(c,spot,selected?.action===spot.action));
     this.drawPlayerLabel(c,nearest);
+    this.drawAmbientConversation(c);
     if(this.editor)this.drawEditorGuides(c);
+  }
+  drawAmbientConversation(c){
+    const exchange=this.ambientConversation;
+    if(!exchange)return;
+    const line=exchange.lines[Math.min(1,Math.floor(exchange.elapsed/3.5))];
+    const speaker=this.staff?.get(line.id);
+    if(!speaker)return;
+    const words=line.text.split(/\s+/),rows=[];
+    for(const word of words){
+      const index=rows.length-1;
+      if(index<0||`${rows[index]} ${word}`.length>29)rows.push(word);
+      else rows[index]+=` ${word}`;
+    }
+    const visible=rows.slice(0,3),w=218,h=22+visible.length*15;
+    let x=speaker.x-w/2,y=speaker.y-91-h;
+    if(y<this.layout.floor.y+10){x=speaker.x+18;y=this.layout.floor.y-65;}
+    if(x+w>this.layout.floor.x+this.layout.floor.w)x=speaker.x-w-18;
+    this.rect(c,x+4,y+4,w,h,'#42382e');
+    this.rect(c,x,y,w,h,'#f5e8bc');
+    this.rect(c,x+3,y+3,w-6,h-6,'#392f31');
+    this.rect(c,speaker.x-5,y+h,10,7,'#f5e8bc');
+    c.font='bold 9px monospace';c.textAlign='left';c.textBaseline='alphabetic';c.fillStyle='#e6c887';c.fillText(speaker.employee.name.toUpperCase(),x+10,y+15);
+    c.font='11px monospace';c.fillStyle='#f7efdb';visible.forEach((row,index)=>c.fillText(row,x+10,y+31+index*15));
   }
   drawAnimatedDoor(c,d){
     const angle=(d.horizontal?0:Math.PI/2)+(d.side==='bottom'||d.side==='left'?-1:1)*d.progress*Math.PI/2;

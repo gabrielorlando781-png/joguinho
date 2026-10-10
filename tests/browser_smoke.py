@@ -1374,8 +1374,65 @@ def verify_management(browser,url):
     close_station(page)
     page.wait_for_function('!window.__testedScene.ceoLeaving',timeout=10000)
     visit(page,'manager:finance')
-    assert 'Caixa:' in page.locator('#station-panel[data-station="manager:finance"] .manager-report').inner_text()
+    page.locator('#station-panel[data-station="manager:finance"] [data-dialogue-topic="report"]').click()
+    assert 'Caixa:' in page.locator('#station-panel[data-station="manager:finance"] .pixel-dialogue-log').inner_text()
     checks.append('The founder can approach a manager in the office and ask for a live report')
+    context.close()
+
+
+def verify_people_meeting(browser,url):
+    fixture=json.loads(subprocess.check_output(['node','--input-type=module','-e', """
+      import {createGame,purchaseOfficeItem,hireEmployee,hireManager} from './src/simulation.js';
+      import {enableLocalTest} from './src/local-test.js';
+      const state=enableLocalTest(createGame({name:'Ana',company:'Estúdio Ana'}),true);
+      state.office.stage='floor';state.office.special={meeting:true,ceo:true};
+      state.allocation={sales:2,delivery:4,quality:2};
+      for(let i=0;i<4;i++){purchaseOfficeItem(state,'desk');purchaseOfficeItem(state,'chair');}
+      hireEmployee(state,'lucas');hireEmployee(state,'marina');hireManager(state,'sales');hireManager(state,'finance');
+      state.day=30;
+      const leader=state.employees[0];leader.career={level:'lead',xp:110,recentOutput:6,lastActiveDay:30,lastPromotionDay:20,lastSupportDay:0};leader.role='Liderança · Dev frontend';
+      const candidate=state.employees[1];candidate.career={level:'junior',xp:35,recentOutput:5,lastActiveDay:30,lastPromotionDay:0,lastSupportDay:0};candidate.morale=88;candidate.stress=5;
+      console.log(JSON.stringify({version:3,state}));
+    """],cwd=ROOT,text=True))
+    context,page=saved_context(browser,url,fixture,{'width':1920,'height':1080})
+    visit(page,'person:lucas')
+    panel=page.locator('#station-panel[data-station="person:lucas"]')
+    assert panel.locator('.pixel-dialogue-frame').is_visible()
+    panel.locator('[data-dialogue-topic="wellbeing"]').click()
+    assert panel.locator('.pixel-speech').count()>=4
+    panel.locator('[data-dialogue-topic="project"]').click()
+    assert 'projeto' in panel.locator('.pixel-dialogue-log').inner_text().lower()
+    panel.locator('[data-dialogue-recognize="lucas"]').click()
+    assert company(page)['employees'][0]['career']['lastSupportDay']==30
+    page.screenshot(path=str(ARTIFACTS/'pixel-employee-conversation.png'),animations='disabled')
+    checks.append('The founder reaches an employee, asks several contextual questions in pixel dialogue, and recognizes work once per day')
+    close_station(page)
+    position=page.evaluate("""() => {const s=window.__testedScene,n=s.staff.get('lucas'),r=s.canvas.getBoundingClientRect();return {x:r.left+s.offsetX+n.x*s.scale,y:r.top+s.offsetY+n.y*s.scale};}""")
+    page.mouse.click(position['x'],position['y'])
+    panel.wait_for(state='visible',timeout=10000)
+    close_station(page)
+    checks.append('Clicking an employee sprite opens the same conversation')
+    page.evaluate('window.__testedScene.state.paused=false;window.__testedScene.nextConversationIn=0')
+    page.wait_for_function('window.__testedScene.ambientConversation?.lines.length===2',timeout=10000)
+    page.screenshot(path=str(ARTIFACTS/'staff-conversation.png'),animations='disabled')
+    page.evaluate('window.__testedScene.state.paused=true')
+    checks.append('Nearby colleagues exchange contextual text in pixel speech boxes inside the office')
+    visit(page,'team');page.locator('[data-station-tab="career"]').click()
+    assert page.locator('[data-promote="marina"]').is_enabled()
+    page.locator('[data-promote="marina"]').click()
+    assert company(page)['employees'][1]['career']['level']=='mid'
+    checks.append('The career board shows measured readiness and promotion changes the employee role')
+    visit(page,'meeting')
+    panel=page.locator('#station-panel[data-station="meeting"]')
+    panel.locator('[data-meeting-call="people"]').click()
+    assert len(company(page)['management']['meeting']['attendees'])==3
+    assert panel.locator('.meeting-waiting').is_visible()
+    page.wait_for_function('window.__testedScene.areMeetingAttendeesReady()',timeout=30000)
+    assert panel.locator('.meeting-statement').count()==3
+    page.screenshot(path=str(ARTIFACTS/'leadership-meeting.png'),animations='disabled')
+    panel.locator('[data-meeting-choice="rest"]').click()
+    assert company(page)['management']['meeting'] is None
+    checks.append('Managers and promoted leaders walk into the meeting room, then a shared decision changes employee wellbeing')
     context.close()
 
 
@@ -1415,13 +1472,13 @@ def main():
                 browser = p.chromium.launch(executable_path=shutil.which('chromium'), headless=True, args=['--no-sandbox'])
                 try:
                     suite = os.environ.get('GAME_BROWSER_SUITE')
-                    if suite not in ('shop','finance','experience','management'):
+                    if suite not in ('shop','finance','experience','management','people'):
                         verify_minimal_office(browser, url)
-                    if suite not in ('shop','hud','experience','management'):
+                    if suite not in ('shop','hud','experience','management','people'):
                         verify_finance_board(browser, url)
-                    if suite not in ('hud','finance','experience','management'):
+                    if suite not in ('hud','finance','experience','management','people'):
                         verify_browser_shop(browser, url)
-                    if suite not in ('shop', 'hud', 'finance','experience','management'):
+                    if suite not in ('shop', 'hud', 'finance','experience','management','people'):
                         verify_computer_login(browser, url)
                         run_journey(browser, url)
                         verify_legacy_save(browser, url)
@@ -1430,6 +1487,7 @@ def main():
                         run_mobile(browser, url, advanced_fixture)
                     if suite=='experience':verify_office_experience(browser,url)
                     if suite=='management':verify_management(browser,url)
+                    if suite=='people':verify_people_meeting(browser,url)
                     assert not errors, f'Browser errors: {errors}'
                 except Exception:
                     for index, context in enumerate(browser.contexts):

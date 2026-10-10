@@ -4,6 +4,8 @@ import { validateFloorPlan } from './office-navigation.js';
 import { renderLayoutEditor } from './layout-editor-ui.js';
 import './style.css';
 import { OfficeScene } from './office.js';
+import { personDialogue } from './people.js';
+import { renderPersonConversation, topicQuestion } from './people-ui.js';
 import { renderOfficeStore } from './store-ui.js';
 import { renderFinanceBoard } from './finance-ui.js';
 import { createShopBrowser, currentShopRoute, navigateShop, parseShopAddress, renderShopBrowser, getShopCatalog } from './shop-browser.js';
@@ -11,7 +13,7 @@ import { renderComputer, renderDevelopmentTerminal } from './computer-ui.js';
 import { getComputerLoginMode, configureComputerPassword, authenticateComputer, parseTerminalCommand } from './computer-session.js';
 import { icon, escape, money, pct, avatar } from './ui.js';
 import { TEST_SAVE_KEY, TEST_MODE_KEY, enableLocalTest, isLocalTestState } from './local-test.js';
-import { CANDIDATES, MANAGER_PROFILES, managerQueue, hireManager, callManager, respondManager, getManagerReport, reconcileManagement, applyOfficePlacement, createGame, loadGame, saveGame, advanceDay, prospect, hireEmployee, setAllocation, setProjectMode, performAction, negotiateProject, discoverLead, interviewCandidate, assignEmployee, resolveProjectEvent, setProjectPriority, collectReceivable, renegotiateReceivable, anticipateReceivable, investProduct, recordTravel, takeLoan, repayLoan, getOfficeOverview, getRoomEffects, ROOM_ACTIONS, getRoomActionEligibility, purchaseOfficeItem, expandOffice, upgradeRoom, customizeBanner, upgradeComputer, performRoomAction, getNegotiationChance, getWorkSession, getWorkSessionEligibility, startWorkSession, answerWorkPuzzle, completeWorkSession } from './simulation.js';
+import { CANDIDATES, MAX_LEADS, getProjectCapacity, getAvailableCandidates, employeeEvaluation, getPromotionEligibility, promoteEmployee, recognizeEmployee, MEETING_AGENDAS, meetingAttendees, conveneLeadership, leadershipOptions, resolveLeadershipMeeting, MANAGER_PROFILES, managerQueue, hireManager, callManager, respondManager, getManagerReport, reconcileManagement, applyOfficePlacement, createGame, loadGame, saveGame, advanceDay, prospect, hireEmployee, setAllocation, setProjectMode, performAction, negotiateProject, discoverLead, interviewCandidate, assignEmployee, resolveProjectEvent, setProjectPriority, collectReceivable, renegotiateReceivable, anticipateReceivable, investProduct, recordTravel, takeLoan, repayLoan, getOfficeOverview, getRoomEffects, ROOM_ACTIONS, getRoomActionEligibility, purchaseOfficeItem, expandOffice, upgradeRoom, customizeBanner, upgradeComputer, performRoomAction, getNegotiationChance, getWorkSession, getWorkSessionEligibility, startWorkSession, answerWorkPuzzle, completeWorkSession } from './simulation.js';
 
 const testRequest = new URL(location.href).searchParams.get('teste');
 let localTestMode = testRequest === '1';
@@ -47,6 +49,7 @@ let computerMaximized = false;
 let terminalView = 'work';
 let terminalHistory = [];
 let pendingSummary = null;
+let dialogueState = null;
 let toastTimer;
 let positionTimer;
 let lastModalTrigger;
@@ -260,6 +263,11 @@ function run(fn, ...args) {
   } else if (currentStation) document.querySelector('#station-panel [data-action="close-station"]')?.focus({ preventScroll: true });
   return result;
 }
+function personAtStation() {
+  if (currentStation?.startsWith('person:')) return state.employees.find((person) => person.id === currentStation.slice(7));
+  if (currentStation?.startsWith('manager:')) return state.management?.managers.find((person) => person.id === currentStation);
+  return null;
+}
 function openLayoutEditor(){
   if(!gameStarted||state.status==='bankrupt'||layoutDraft)return;
   closeModal();if(currentStation)closeStation();layoutEditorWasPaused=state.paused;state.paused=true;
@@ -283,12 +291,16 @@ function layoutEditorAction(action){
   if(action==='reset'){layoutDraft={};scene.editor.items=layoutDraft;scene.previewEditor();scene.editor.onChange(layoutDraft,true);}
 }
 function openStation(action) {
-  if (!gameStarted || (!stations[action] && !action?.startsWith('manager:'))) return;
+  if (!gameStarted || (!stations[action] && !action?.startsWith('manager:') && !action?.startsWith('person:'))) return;
   if (!scene.isNearStation(action)) { scene.requestInteraction(action); return; }
   if (currentStation !== action) {
     panelWasPaused = state.paused;
     panelTab = 'main';
     if (action === 'work') { lockComputer(); terminalView = 'work'; }
+    if (action.startsWith('person:') || action.startsWith('manager:')) {
+      const person = [...state.employees, ...(state.management?.managers || [])].find((entry) => entry.id === (action.startsWith('person:') ? action.slice(7) : action));
+      if (person) dialogueState = { personId: person.id, lines: [{ from: 'founder', text: `Oi, ${person.name}. Tem um minuto?` }, { from: 'colleague', text: personDialogue(state, person, 'greeting') }] };
+    }
   }
   currentStation = action;
   state.paused = true;
@@ -307,6 +319,7 @@ function closeStation() {
   scene.setPlayerSeated?.(false);
   state.officePosition = { x: scene.player.x, y: scene.player.y };
   currentStation = null;
+  dialogueState = null;
   document.querySelector('#station-panel').hidden = true;
   scene.setInteractionOpen(false);
   state.paused = state.status === 'bankrupt' ? true : panelWasPaused;
@@ -331,7 +344,7 @@ function positionPanel() {
   const width = panel.getBoundingClientRect().width;
   const height = panel.offsetHeight;
   const margin = 16, top = 78, bottom = window.innerHeight - 16;
-  if (currentStation === 'ceo') {
+  if (currentStation === 'ceo' || currentStation?.startsWith('person:') || currentStation?.startsWith('manager:')) {
     panel.style.left = `${anchor.x > window.innerWidth / 2 ? margin : Math.max(margin, window.innerWidth - width - margin)}px`;
     panel.style.top = `${Math.max(top, Math.min(bottom - height, top))}px`;
     return;
@@ -371,7 +384,7 @@ function specialRoomContent(room) {
   const intro = meeting
     ? 'Uma hora de conversa pode poupar retrabalho. As ações usam a rotina do fundador e só podem ser feitas uma vez por dia.'
     : 'A privacidade ajuda a recuperar foco e energia. Usar a sala repetidamente aumenta a distância da equipe; reservar tempo para conversar reaproxima vocês.';
-  const managerSection = meeting ? '' : renderCEOManagers();
+  const managerSection = meeting ? renderLeadershipMeeting() : renderCEOManagers();
   return `${managerSection}${stats(meeting ? [
     ['EQUIPE', state.employees.length, 'Pessoas que constroem junto'],
     ['SINERGIA', `${Math.round(effects.synergy * 100)}%`, 'A divisão das salas afeta a colaboração'],
@@ -383,6 +396,26 @@ function specialRoomContent(room) {
     const area = { sales: 'vendas', delivery: 'desenvolvimento', quality: 'qualidade e gestão' }[action.area];
     return `<article class="project-card"><h3>${escape(action.label || action.name)}</h3><p class="muted">${escape(action.description)}</p><div class="opportunity-meta"><span>${icon('clock')} ${action.hours}h de ${area}</span><span>${action.cost ? money(action.cost) : 'Sem custo em dinheiro'}</span></div>${!eligibility.ok ? `<p class="muted">${escape(eligibility.reason || eligibility.message)}</p>` : ''}<button class="${eligibility.ok ? 'primary' : 'secondary'}-button full" data-room-action="${action.id}" ${eligibility.ok ? '' : 'disabled'}>${escape(action.label || action.name)} ${icon('arrow')}</button></article>`;
   }).join('')}</div><div class="concept-note">${icon(meeting ? 'people' : 'target')}<p>${meeting ? 'Alinhamento reduz bloqueios e melhora revisões; apresentações ajudam nas próximas negociações; integração acelera os primeiros dias de quem acabou de chegar.' : 'Prestígio tem consequência. Observe o isolamento e a moral no RH para decidir entre trabalhar sozinho e passar tempo com o time.'}</p></div>`;
+}
+function renderLeadershipMeeting() {
+  const meeting = state.management?.meeting;
+  const leaders = meetingAttendees(state);
+  if (!meeting) return `<section class="leadership-room"><div class="section-label">CONSELHO DA EMPRESA</div><h3 class="subheading">Convocar a liderança</h3><p class="muted">Gerentes e funcionários promovidos a líderes caminham até esta sala. A reunião usa 1h de gestão e acontece uma vez por dia.</p><div class="leader-preview">${leaders.map((person) => `<span>${avatar(person.color, 36, person.name)} ${escape(person.name)} · ${escape(person.role)}</span>`).join('') || '<span>Contrate um gerente ou promova alguém a líder.</span>'}</div><div class="meeting-agendas">${MEETING_AGENDAS.map((agenda) => `<button class="secondary-button" data-meeting-call="${agenda.id}" ${!leaders.length || state.management.lastMeetingDay === state.day ? 'disabled' : ''}><strong>${escape(agenda.label)}</strong><small>${escape(agenda.description)}</small></button>`).join('')}</div></section>`;
+  const people = meeting.attendees.map((id) => [...state.employees, ...(state.management?.managers || [])].find((person) => person.id === id)).filter(Boolean);
+  const arrived = people.filter((person) => scene?.staff?.get(person.id)?.meetingLocation === 'inside').length;
+  const ready = scene?.areMeetingAttendeesReady();
+  const statements = people.map((person) => {
+    const topic = meeting.agenda === 'people' ? 'wellbeing' : meeting.agenda === 'strategy' ? 'company' : 'project';
+    return `<div class="meeting-statement">${avatar(person.color, 37, person.name)}<p><strong>${escape(person.name)}</strong><span>${escape(personDialogue(state, person, topic))}</span></p></div>`;
+  }).join('');
+  return `<section class="leadership-room"><div class="section-label">REUNIÃO DE LIDERANÇA</div><h3 class="subheading">${escape(MEETING_AGENDAS.find((item) => item.id === meeting.agenda)?.label || 'Pauta')}</h3><p class="muted">${ready ? 'Todos estão na sala. Ouça o grupo e escolha um encaminhamento.' : `Aguarde: ${arrived}/${people.length} líderes chegaram. Eles estão vindo pelo escritório.`}</p><div class="meeting-attendance">${people.map((person) => `<span class="${scene?.staff?.get(person.id)?.meetingLocation === 'inside' ? 'arrived' : ''}">${escape(person.name)} · ${scene?.staff?.get(person.id)?.meetingLocation === 'inside' ? 'na sala' : 'a caminho'}</span>`).join('')}</div>${ready ? `<div class="meeting-discussion">${statements}</div><div class="meeting-agendas">${leadershipOptions(state).map((option) => `<button class="secondary-button" data-meeting-choice="${option.id}"><strong>${escape(option.label)}</strong><small>${escape(option.detail)}</small></button>`).join('')}</div>` : '<div class="meeting-waiting">A porta abre conforme cada líder se aproxima. A decisão ficará disponível quando todos estiverem presentes.</div>'}</section>`;
+}
+function renderCareerBoard() {
+  return `<p class="muted">A avaliação combina produção recente, experiência acumulada, moral, estresse e tempo no cargo. Promover aumenta salário, encargos e produtividade. Líderes participam das reuniões.</p>${state.employees.map((person) => {
+    const evaluation = employeeEvaluation(state, person);
+    const allowed = getPromotionEligibility(state, person.id);
+    return `<article class="person-card career-card"><div class="person-top">${avatar(person.color, 48, person.name)}<div><h3>${escape(person.name)}</h3><p>${escape(person.role)}</p></div><span class="status-pill ${evaluation.score >= 70 ? 'success' : ''}">${evaluation.score}/100</span></div><div class="career-meter"><span style="width:${evaluation.score}%"></span></div>${stats([['EXPERIÊNCIA', `${Math.round(evaluation.xp)} pts`, evaluation.next ? `Próximo cargo: ${evaluation.next.xp} pts` : 'Nível máximo'], ['TEMPO NO CARGO', `${evaluation.days} dias`, evaluation.next ? `Mínimo: ${evaluation.next.days} dias` : 'Liderança'], ['PRÓXIMO SALÁRIO', allowed.newSalary ? money(allowed.newSalary) : money(person.salary), 'Base antes de encargos']])}${evaluation.next ? `<p class="muted">${allowed.ok ? `${escape(person.name)} está pronto para ${evaluation.next.label}.` : escape(allowed.reason)}</p><button class="primary-button full" data-promote="${escape(person.id)}" ${allowed.ok ? '' : 'disabled'}>Promover a ${escape(evaluation.next.label)}</button>` : '<p class="manager-report">Este profissional já exerce liderança e pode ser convocado para reuniões.</p>'}</article>`;
+  }).join('') || '<div class="empty-state">Contrate sua primeira pessoa para iniciar uma carreira na empresa.</div>'}`;
 }
 function renderCEOManagers() {
   const queue = managerQueue(state);
@@ -401,14 +434,14 @@ function renderManagerHiring(office) {
 }
 function renderStation() {
   const el = document.querySelector('#station-panel');
-  const managerArea = currentStation?.startsWith('manager:') ? currentStation.slice(8) : null;
-  const managerProfile = managerArea && MANAGER_PROFILES.find((person) => person.area === managerArea);
-  const s = managerProfile ? { title: managerProfile.name, subtitle: managerProfile.role, icon: 'people' } : stations[currentStation];
+  const person = personAtStation();
+  const s = stations[currentStation];
   const previousScroll = panelScroller(el)?.scrollTop || 0;
   el.hidden = false;
   el.dataset.station = currentStation;
   el.classList.toggle('computer-panel', currentStation === 'work');
   el.classList.toggle('finance-panel', currentStation === 'finance');
+  el.classList.toggle('pixel-dialogue-panel', Boolean(person));
   el.classList.toggle('computer-maximized', currentStation === 'work' && computerMaximized);
   if (currentStation === 'finance') {
     el.innerHTML = renderFinanceBoard(state, { section: panelTab, selectedDay: financeDay, selectedPeriod: financePeriod });
@@ -416,8 +449,8 @@ function renderStation() {
     requestAnimationFrame(positionPanel);
     return;
   }
-  if (managerProfile) {
-    el.innerHTML = `<div class="station-frame"><header class="station-header"><span class="station-icon">${icon('people')}</span><div class="station-heading"><div class="section-label">CONVERSA NO ESCRITÓRIO</div><h2>${escape(managerProfile.name)}</h2><p class="station-subtitle">${escape(managerProfile.role)}</p></div><button class="station-close icon-button" data-action="close-station" aria-label="Voltar ao escritório">${icon('close')}</button></header><div class="station-body"><p class="manager-report">${escape(getManagerReport(state, managerArea) || 'Este gerente não está mais na empresa.')}</p><p class="muted">Para decidir uma proposta, receba este gerente na sala do CEO. Você pode consultar os números aqui quando ele estiver por perto.</p></div></div>`;
+  if (person) {
+    el.innerHTML = renderPersonConversation(state, person, dialogueState);
     requestAnimationFrame(positionPanel);
     return;
   }
@@ -447,7 +480,7 @@ function stationContent(action) {
     return renderComputer(state, { app: computerApp, content, session: getWorkSession(state), clock, locked: !computerUnlocked, loginMode: computerLoginMode || getComputerLoginMode(state), loginError: computerLoginError, startMenuOpen: computerStartMenuOpen, maximized: computerMaximized });
   }
   if (action === 'sales') {
-    return `${stats([['CONTATOS', state.leads.length, 'Até 6 oportunidades abertas'], ['REPUTAÇÃO', `${Math.round(state.reputation)}/100`, 'Influencia propostas premium'], ['TEMPO COMERCIAL', `${state.allocation.sales}h`, 'Discovery usa uma hora da rotina']])}<div class="section-header"><h3 class="subheading">Qual problema vale sua próxima hora?</h3><button class="secondary-button compact" data-action="prospect">${icon('plus')} Prospectar</button></div><p class="muted">Investigar antes de vender diminui incerteza. Preço e salas mudam as chances de fechar, prazo e recebimento. Cada contato tem uma tentativa de negociação.</p>${state.leads.map((l, i) => `<article class="opportunity-card"><div class="opportunity-top"><span class="client-monogram color-${i % 3}">${escape(l.client.slice(0, 2).toUpperCase())}</span><div><small>${escape(l.sector)}</small><strong>${escape(l.client)}</strong></div><span class="tag">${l.discovered ? 'ESCOPO DESCOBERTO' : 'CONTATO ABERTO'}</span></div><h3>${escape(l.title)}</h3><p>${escape(l.description)}</p><div class="opportunity-meta"><span>${icon('clock')} ${l.estimateMin || Math.floor(l.hours * .85)}–${l.estimateMax || Math.ceil(l.hours * 1.25)}h estimadas</span><span>${l.duration} dias</span></div>${l.discovered ? `<div class="discovery-note"><strong>Discovery concluído</strong><p>${escape(l.qualification?.scope || 'O cliente confirmou o escopo e as necessidades prioritárias.')}</p><small>${escape(l.qualification?.risks || 'Menos incerteza para defender sua proposta.')}</small></div>` : `<button class="secondary-button compact full" data-discover="${escape(l.id)}" ${l.negotiation ? 'disabled' : ''}>${icon('message')} Investigar o escopo · 1h de vendas</button>`}${l.negotiation ? `<div class="interview-note"><strong>Negociação encerrada</strong><p>O cliente recusou a proposta. Novos contatos chegam pela prospecção; esta negociação não pode ser repetida.</p></div>` : ''}<div class="proposal-options"><button data-negotiate="${escape(l.id)}" data-pricing="discount" ${l.negotiation ? 'disabled' : ''}><small>COMPETITIVA</small><strong>${money(l.price * .85)}</strong><span>+2 dias de prazo · recebe D+2<br>${Math.round(getNegotiationChance(state, l.id, 'discount') * 100)}% de chance de fechar</span></button><button data-negotiate="${escape(l.id)}" data-pricing="standard" class="recommended" ${l.negotiation ? 'disabled' : ''}><small>EQUILIBRADA</small><strong>${money(l.price)}</strong><span>Prazo base · recebe D+3<br>${Math.round(getNegotiationChance(state, l.id, 'standard') * 100)}% de chance de fechar</span></button><button data-negotiate="${escape(l.id)}" data-pricing="premium" ${l.negotiation || (!l.discovered && state.reputation < 25) ? 'disabled' : ''}><small>PREMIUM</small><strong>${money(l.price * 1.2)}</strong><span>−2 dias de prazo · recebe D+5<br>${Math.round(getNegotiationChance(state, l.id, 'premium') * 100)}% de chance de fechar</span></button></div></article>`).join('') || '<div class="empty-state">Seu pipeline está vazio. Prospecte ou reserve mais horas de vendas.</div>'}`;
+    return `${stats([['CONTATOS', state.leads.length, 'Até ${MAX_LEADS} oportunidades abertas'], ['REPUTAÇÃO', `${Math.round(state.reputation)}/100`, 'Influencia propostas premium'], ['TEMPO COMERCIAL', `${state.allocation.sales}h`, 'Discovery usa uma hora da rotina']])}<div class="section-header"><h3 class="subheading">Qual problema vale sua próxima hora?</h3><button class="secondary-button compact" data-action="prospect">${icon('plus')} Prospectar</button></div><p class="muted">Investigar antes de vender diminui incerteza. Preço e salas mudam as chances de fechar, prazo e recebimento. Cada contato tem uma tentativa de negociação.</p>${state.leads.map((l, i) => `<article class="opportunity-card"><div class="opportunity-top"><span class="client-monogram color-${i % 3}">${escape(l.client.slice(0, 2).toUpperCase())}</span><div><small>${escape(l.sector)}</small><strong>${escape(l.client)}</strong></div><span class="tag">${l.discovered ? 'ESCOPO DESCOBERTO' : 'CONTATO ABERTO'}</span></div><h3>${escape(l.title)}</h3><p>${escape(l.description)}</p><div class="opportunity-meta"><span>${icon('clock')} ${l.estimateMin || Math.floor(l.hours * .85)}–${l.estimateMax || Math.ceil(l.hours * 1.25)}h estimadas</span><span>${l.duration} dias</span></div>${l.discovered ? `<div class="discovery-note"><strong>Discovery concluído</strong><p>${escape(l.qualification?.scope || 'O cliente confirmou o escopo e as necessidades prioritárias.')}</p><small>${escape(l.qualification?.risks || 'Menos incerteza para defender sua proposta.')}</small></div>` : `<button class="secondary-button compact full" data-discover="${escape(l.id)}" ${l.negotiation ? 'disabled' : ''}>${icon('message')} Investigar o escopo · 1h de vendas</button>`}${l.negotiation ? `<div class="interview-note"><strong>Negociação encerrada</strong><p>O cliente recusou a proposta. Novos contatos chegam pela prospecção; esta negociação não pode ser repetida.</p></div>` : ''}<div class="proposal-options"><button data-negotiate="${escape(l.id)}" data-pricing="discount" ${l.negotiation ? 'disabled' : ''}><small>COMPETITIVA</small><strong>${money(l.price * .85)}</strong><span>+2 dias de prazo · recebe D+2<br>${Math.round(getNegotiationChance(state, l.id, 'discount') * 100)}% de chance de fechar</span></button><button data-negotiate="${escape(l.id)}" data-pricing="standard" class="recommended" ${l.negotiation ? 'disabled' : ''}><small>EQUILIBRADA</small><strong>${money(l.price)}</strong><span>Prazo base · recebe D+3<br>${Math.round(getNegotiationChance(state, l.id, 'standard') * 100)}% de chance de fechar</span></button><button data-negotiate="${escape(l.id)}" data-pricing="premium" ${l.negotiation || (!l.discovered && state.reputation < 25) ? 'disabled' : ''}><small>PREMIUM</small><strong>${money(l.price * 1.2)}</strong><span>−2 dias de prazo · recebe D+5<br>${Math.round(getNegotiationChance(state, l.id, 'premium') * 100)}% de chance de fechar</span></button></div></article>`).join('') || '<div class="empty-state">Seu pipeline está vazio. Prospecte ou reserve mais horas de vendas.</div>'}`;
   }
   if (action === 'board') {
     const events = state.pendingEvents || [];
@@ -455,7 +488,7 @@ function stationContent(action) {
   }
   if (action === 'team') {
     const office = getOfficeOverview(state);
-    return `${tabs([['main', 'Equipe & responsabilidades'], ['candidates', 'Entrevistas & vagas'], ['managers', 'Gerentes']])}${stats([['POSTOS LIVRES', office.freePosts, 'Mesa e cadeira prontas antes de contratar'], ['EQUIPE', state.employees.length, 'Computadores são atribuídos ao ocupar um posto']])}${panelTab === 'managers' ? renderManagerHiring(office) : panelTab === 'candidates' ? `<p class="muted">Conhecer a pessoa custa 1h de qualidade e gestão. Sem mesa e cadeira livres não há contratação: prepare um posto na loja. A sala do RH melhora a seleção dos talentos.</p>${CANDIDATES.filter((c) => !state.employees.some((e) => e.id === c.id)).map((c) => { const interview = state.interviews?.[c.id]; return `<article class="person-card"><div class="person-top">${avatar(c.color, 52, c.name)}<div><h3>${escape(c.name)}</h3><p>${escape(c.role)}</p></div><span class="trait-pill">${money(c.salary)}/mês</span></div><p class="muted">${escape(c.trait)}</p>${interview ? `<div class="interview-note"><strong>Entrevista concluída · ${Math.round(interview.score)}/100</strong><p>${escape(interview.strength)}</p><small>${escape(interview.risk)}</small></div>` : `<button class="secondary-button full" data-interview="${escape(c.id)}">Entrevistar · 1h de gestão</button>`}<div class="hire-actions"><button class="primary-button compact" data-hire="${escape(c.id)}" data-contract="PJ" ${(!interview && !isLocalTestState(state)) || office.freePosts <= 0 ? 'disabled' : ''}>PJ · ${money(c.salary * 1.15)}/mês</button><button class="secondary-button compact" data-hire="${escape(c.id)}" data-contract="CLT" ${(!interview && !isLocalTestState(state)) || office.freePosts <= 0 ? 'disabled' : ''}>CLT · ${money(c.salary * 1.7)}/mês</button></div></article>`; }).join('') || '<div class="empty-state">Todos os talentos deste primeiro grupo já fazem parte da sua equipe.</div>'}` : `<article class="person-card"><div class="person-top">${avatar(state.profile.avatarColor, 48, state.profile.name)}<div><h3>${escape(state.profile.name)}</h3><p>Fundador · vende, entrega e decide</p></div><span class="tag">8H / DIA</span></div></article>${state.employees.map((e) => `<article class="person-card"><div class="person-top">${avatar(e.color, 48, e.name)}<div><h3>${escape(e.name)}</h3><p>${escape(e.role)} · ${e.contract}</p></div><span class="status-pill ${e.stress > 60 ? '' : 'success'}">${e.stress > 60 ? 'Sobrecarregado' : 'Em equilíbrio'}</span></div>${stats([['MORAL', `${Math.round(e.morale ?? 80)}%`], ['ESTRESSE', `${Math.round(e.stress ?? 10)}%`], ['FOLHA / DIA', money(e.salary * (e.contract === 'CLT' ? 1.7 : 1.15) / 20)]])}<div class="station-grid"><label class="select-label">Responsabilidade<select data-employee-assignment="${escape(e.id)}"><option value="auto" ${!e.assignment || e.assignment === 'auto' ? 'selected' : ''}>Ajudar na fila prioritária</option>${activeProjects().map((p) => `<option value="${escape(p.id)}" ${e.assignment === p.id ? 'selected' : ''}>${escape(p.title)}</option>`).join('')}</select></label><label class="select-label">Papel no projeto<select data-employee-role="${escape(e.id)}"><option value="delivery" ${e.assignmentRole !== 'quality' ? 'selected' : ''}>Desenvolver</option><option value="quality" ${e.assignmentRole === 'quality' ? 'selected' : ''}>Revisar & testar</option></select></label></div></article>`).join('') || '<div class="empty-state">Você ainda faz tudo. Consulte a aba de entrevistas para trazer a primeira pessoa.</div>'}<div class="concept-note">${icon('people')}<p>Distribuir pessoas entre entregas e revisão muda o resultado. Sobrecarga eleva estresse e reduz produtividade; a equipe não é apenas uma soma de horas.</p></div>`}`;
+    return `${tabs([['main', 'Equipe & responsabilidades'], ['candidates', 'Entrevistas & vagas'], ['career', 'Carreira'], ['managers', 'Gerentes']])}${stats([['POSTOS LIVRES', office.freePosts, 'Mesa e cadeira prontas antes de contratar'], ['EQUIPE', state.employees.length, 'Computadores são atribuídos ao ocupar um posto']])}${panelTab === 'career' ? renderCareerBoard() : panelTab === 'managers' ? renderManagerHiring(office) : panelTab === 'candidates' ? `<p class="muted">Conhecer a pessoa custa 1h de qualidade e gestão. Sem mesa e cadeira livres não há contratação: prepare um posto na loja. A sala do RH melhora a seleção dos talentos.</p>${getAvailableCandidates(state).map((c) => { const interview = state.interviews?.[c.id]; return `<article class="person-card"><div class="person-top">${avatar(c.color, 52, c.name)}<div><h3>${escape(c.name)}</h3><p>${escape(c.role)}</p></div><span class="trait-pill">${money(c.salary)}/mês</span></div><p class="muted">${escape(c.trait)}</p>${interview ? `<div class="interview-note"><strong>Entrevista concluída · ${Math.round(interview.score)}/100</strong><p>${escape(interview.strength)}</p><small>${escape(interview.risk)}</small></div>` : `<button class="secondary-button full" data-interview="${escape(c.id)}">Entrevistar · 1h de gestão</button>`}<div class="hire-actions"><button class="primary-button compact" data-hire="${escape(c.id)}" data-contract="PJ" ${(!interview && !isLocalTestState(state)) || office.freePosts <= 0 ? 'disabled' : ''}>PJ · ${money(c.salary * 1.15)}/mês</button><button class="secondary-button compact" data-hire="${escape(c.id)}" data-contract="CLT" ${(!interview && !isLocalTestState(state)) || office.freePosts <= 0 ? 'disabled' : ''}>CLT · ${money(c.salary * 1.7)}/mês</button></div></article>`; }).join('') || '<div class="empty-state">O RH trará novos candidatos nos próximos dias.</div>'}` : `<article class="person-card"><div class="person-top">${avatar(state.profile.avatarColor, 48, state.profile.name)}<div><h3>${escape(state.profile.name)}</h3><p>Fundador · vende, entrega e decide</p></div><span class="tag">8H / DIA</span></div></article>${state.employees.map((e) => `<article class="person-card"><div class="person-top">${avatar(e.color, 48, e.name)}<div><h3>${escape(e.name)}</h3><p>${escape(e.role)} · ${e.contract}</p></div><span class="status-pill ${e.stress > 60 ? '' : 'success'}">${e.stress > 60 ? 'Sobrecarregado' : 'Em equilíbrio'}</span></div>${stats([['MORAL', `${Math.round(e.morale ?? 80)}%`], ['ESTRESSE', `${Math.round(e.stress ?? 10)}%`], ['FOLHA / DIA', money(e.salary * (e.contract === 'CLT' ? 1.7 : 1.15) / 20)]])}<div class="station-grid"><label class="select-label">Responsabilidade<select data-employee-assignment="${escape(e.id)}"><option value="auto" ${!e.assignment || e.assignment === 'auto' ? 'selected' : ''}>Ajudar na fila prioritária</option>${activeProjects().map((p) => `<option value="${escape(p.id)}" ${e.assignment === p.id ? 'selected' : ''}>${escape(p.title)}</option>`).join('')}</select></label><label class="select-label">Papel no projeto<select data-employee-role="${escape(e.id)}"><option value="delivery" ${e.assignmentRole !== 'quality' ? 'selected' : ''}>Desenvolver</option><option value="quality" ${e.assignmentRole === 'quality' ? 'selected' : ''}>Revisar & testar</option></select></label></div></article>`).join('') || '<div class="empty-state">Você ainda faz tudo. Consulte a aba de entrevistas para trazer a primeira pessoa.</div>'}<div class="concept-note">${icon('people')}<p>Distribuir pessoas entre entregas e revisão muda o resultado. Sobrecarga eleva estresse e reduz produtividade; a equipe não é apenas uma soma de horas.</p></div>`}`;
   }
   if (action === 'furniture') return renderOfficeStore(state, panelTab === 'main' ? 'overview' : panelTab);
   if (action === 'meeting' || action === 'ceo') return specialRoomContent(action);
@@ -552,7 +585,7 @@ function showSettings() {
   openModal(`<div class="settings-content"><div class="settings-brand brand"><span class="brand-mark">${icon('code')}</span><span>devhouse<span class="brand-dot">.</span></span></div><h2 id="modal-title">Configurações</h2><div class="settings-actions"><button data-action="fullscreen">${icon('fullscreen')}<span>${document.fullscreenElement ? 'Sair da tela cheia' : 'Tela cheia'}</span></button><button data-action="settings-profile">${icon('people')}<span>Fundador e empresa</span></button><button data-action="settings-help">${icon('book')}<span>Como jogar</span></button><button data-edit="open">${icon('grid')}<span>Organizar escritório</span></button><button data-action="settings-new">${icon('plus')}<span>Novo jogo</span></button></div>${localTestMode ? '<section class="settings-test"><strong>Teste local</strong><p>Partida separada, com requisitos de progresso liberados. Amplie o espaço para instalar mais itens.</p><div class="settings-actions"><button data-local-test="money">+ R$ 1 milhão</button><button data-local-test="exit">Voltar à partida normal</button></div></section>' : ''}</div>`);
 }
 function showControls() {
-  openModal(`<h2 id="modal-title">Como jogar</h2><div class="settings-help"><p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ou setas para andar.</p><p>Clique no chão para caminhar. Clique em uma mesa ou no nome de um setor para ir até ele.</p><p><kbd>E</kbd> consulta o setor próximo. <kbd>Esc</kbd> fecha uma consulta.</p><p>Use o computador para desenvolver, comprar expansões e construir seu produto. Comercial, projetos, finanças e RH ficam nas mesas do escritório.</p><p>Depois de construir a sala do CEO, contrate gerentes no RH. Eles cuidam da rotina e vêm ao gabinete para decisões. Você pode abordá-los no escritório para consultar cada área.</p><p>O botão de tempo retoma ou pausa o expediente. As velocidades são 1×, 2× e 4×.</p></div><button class="secondary-button full" data-action="settings">Voltar às configurações</button>`);
+  openModal(`<h2 id="modal-title">Como jogar</h2><div class="settings-help"><p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ou setas para andar.</p><p>Clique no chão para caminhar. Clique em uma mesa, setor ou pessoa para ir até lá.</p><p><kbd>E</kbd> consulta o setor ou conversa com o colega próximo. <kbd>Esc</kbd> fecha a consulta.</p><p>Use o computador para desenvolver, comprar expansões e construir seu produto. Comercial, projetos, finanças e RH ficam nas mesas do escritório.</p><p>No RH, entreviste candidatos e acompanhe a carreira. Converse com funcionários para saber como estão e ouvir sua opinião; reconheça o trabalho deles uma vez por dia.</p><p>Depois de construir a sala do CEO, contrate gerentes no RH. Eles cuidam da rotina e vêm ao gabinete para decisões. Na sala de reunião, convoque gerentes e líderes e espere todos entrarem antes de decidir.</p><p>O botão de tempo retoma ou pausa o expediente. As velocidades são 1×, 2× e 4×.</p></div><button class="secondary-button full" data-action="settings">Voltar às configurações</button>`);
 }
 async function toggleFullscreen() {
   try {
@@ -615,6 +648,35 @@ document.addEventListener('click', (e) => {
   if (target.dataset.travel) return travelTo(target.dataset.travel);
   if (target.dataset.action) return handleAction(target.dataset.action);
   if (!currentStation || !scene.isNearStation(currentStation)) return;
+  if (target.dataset.dialogueTopic && personAtStation()) {
+    const person = personAtStation();
+    const topic = target.dataset.dialogueTopic;
+    dialogueState ||= { personId: person.id, lines: [] };
+    dialogueState.lines.push({ from: 'founder', text: topic === 'report' ? 'Como está sua área?' : topicQuestion(topic) });
+    dialogueState.lines.push({ from: 'colleague', text: topic === 'report' && person.area ? getManagerReport(state, person.area) : personDialogue(state, person, topic) });
+    renderStation();
+    const log = document.querySelector('.pixel-dialogue-log'); if (log) log.scrollTop = log.scrollHeight;
+    return;
+  }
+  if (target.dataset.dialogueRecognize && currentStation === `person:${target.dataset.dialogueRecognize}`) {
+    const person = personAtStation();
+    const outcome = run(recognizeEmployee, person.id);
+    if (outcome?.ok) {
+      dialogueState.lines.push({ from: 'founder', text: 'Obrigado pelo seu trabalho. Quero entender como posso apoiar você.' });
+      dialogueState.lines.push({ from: 'colleague', text: `Obrigado por me ouvir. Isso me dá mais confiança para continuar com ${state.projects.find((project) => project.id === person.assignment)?.title || 'a equipe'}.` });
+      renderStation();
+    }
+    return;
+  }
+  if (target.dataset.promote && currentStation === 'team') return run(promoteEmployee, target.dataset.promote);
+  if (target.dataset.meetingCall && currentStation === 'meeting') return run(conveneLeadership, target.dataset.meetingCall);
+  if (target.dataset.meetingChoice && currentStation === 'meeting') {
+    if (!scene.areMeetingAttendeesReady()) return toast('Aguarde todos os líderes entrarem na sala.', false);
+    const attendeeIds = [...(state.management.meeting?.attendees || [])];
+    const outcome = run(resolveLeadershipMeeting, target.dataset.meetingChoice);
+    if (outcome?.ok) { scene.releaseMeeting(attendeeIds); renderStation(); }
+    return outcome;
+  }
   if (currentStation === 'finance' && target.dataset.financeDay) {
     financeDay = Number(target.dataset.financeDay); panelTab = 'forecast'; renderStation();
     document.querySelector(`.finance-day-strip [data-finance-day="${financeDay}"]`)?.focus({ preventScroll: true });
@@ -780,6 +842,7 @@ scene = new OfficeScene(document.querySelector('#office-canvas'), {
   },
 });
 scene.onManagerArrival = () => { if (currentStation === 'ceo') renderStation(); };
+scene.onMeetingReady = () => { if (currentStation === 'meeting') renderStation(); };
 render();
 if (!saved) showProfile(true);
 setInterval(() => {
